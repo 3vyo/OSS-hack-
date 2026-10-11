@@ -214,7 +214,12 @@ class Browser:
             try:
                 await self._start()
             except PlaywrightError as exc:
-                return Snapshot.failed(page_id, "chromium", url, f"Chromium could not start ({exc.message})")
+                if "Executable doesn't exist" in exc.message:
+                    reason = ("JavaScript mode needs Chromium, which isn't installed here. Run: "
+                              ".venv/bin/playwright install chromium (or press ctrl+r for static mode)")
+                else:
+                    reason = f"Chromium could not start ({exc.message.splitlines()[0]})"
+                return Snapshot.failed(page_id, "chromium", url, reason)
             return await self._inspect(url, page_id)
 
     async def _route(self, route: Route, filters: Filters | None, records: list[RequestRecord]) -> None:

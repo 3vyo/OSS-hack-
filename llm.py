@@ -3,6 +3,7 @@
 import asyncio
 import itertools
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -14,7 +15,9 @@ import render
 from render import safe_text
 from snapshot import Snapshot
 
-MODEL = "gemma4:e2b-it-qat"
+# The smallest Gemma 4, for laptops without a GPU. A bigger one (e.g. gemma4:e4b) can be chosen with
+# LINKINSPECTOR_MODEL; OLLAMA_HOST points at an Ollama server on another machine.
+MODEL = os.environ.get("LINKINSPECTOR_MODEL", "gemma4:e2b-it-qat")
 # Bounded context and short output: this model writes about 8 tokens/s on the laptop CPU.
 OPTIONS = {"temperature": 0, "num_ctx": 4096, "num_predict": 256}
 KEEP_ALIVE = "30m"
