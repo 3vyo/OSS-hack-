@@ -16,12 +16,14 @@ from textual.widgets import Footer, Input, Markdown, Static
 
 import blocking
 import clipboard
+import designs
 import fetch_static
 import llm
 import page_checks
 import policy
 import url_checks
 from browser import Browser
+from designs import Colours
 from llm import Analysis
 from render import safe_text
 from snapshot import Finding, Snapshot
@@ -85,7 +87,6 @@ class AddressBar(Input):
         self.replace(" ".join(text.split()), start, end)  # a link copied with line breaks
 
 
-SEVERITY_COLOUR = {"danger": "red", "warning": "yellow", "info": "cyan"}
 SEVERITY_ORDER = {"danger": 0, "warning": 1, "info": 2}
 CHECK_LABELS = {
     "userinfo": "Hidden real address",
@@ -117,9 +118,10 @@ def _shorten(url: str, limit: int = 90) -> str:
     return url if len(url) <= limit else url[:limit - 1] + "…"
 
 
-def append_findings(text: Text, findings: tuple[Finding, ...] | list[Finding], explain: bool = True) -> None:
+def append_findings(text: Text, findings: tuple[Finding, ...] | list[Finding], colours: Colours,
+                    explain: bool = True) -> None:
     for finding in sorted(findings, key=lambda f: (SEVERITY_ORDER[f.severity], f.id)):
-        colour = SEVERITY_COLOUR[finding.severity]
+        colour = {"danger": colours.danger, "warning": colours.warning, "info": colours.info}[finding.severity]
         text.append("● ", style=colour)
         text.append(f"{finding.id} {CHECK_LABELS.get(finding.check, finding.check)}\n", style=f"bold {colour}")
         text.append(f"{safe_text(finding.observation)}\n")
@@ -128,8 +130,9 @@ def append_findings(text: Text, findings: tuple[Finding, ...] | list[Finding], e
         text.append("\n")
 
 
-RISK = {2: ("Risk: HIGH", "bold white on red"), 1: ("Risk: MEDIUM", "bold black on yellow"),
-        0: ("No warning signs found", "bold")}
+def risk_badge(level: int, colours: Colours) -> tuple[str, str]:
+    return {2: ("Risk: HIGH", colours.danger_badge), 1: ("Risk: MEDIUM", colours.warning_badge),
+            0: ("No warning signs found", "bold")}[level]
 
 
 def cookie_summary(choices: tuple[str, ...]) -> str:
@@ -172,12 +175,13 @@ def is_risky(snapshot: Snapshot) -> bool:
     return not snapshot.error and any(f.severity in ("warning", "danger") for f in snapshot.findings)
 
 
-def append_analysis(info: Text, snapshot: Snapshot, analysis: Analysis | None, available: bool | None) -> None:
+def append_analysis(info: Text, snapshot: Snapshot, analysis: Analysis | None, available: bool | None,
+                    colours: Colours) -> None:
     info.append("Gemma (local AI)\n", style="bold underline")
     status = analysis.status if analysis else None
     if status == "done":
         level = llm.ASSESSMENT_LEVEL[analysis.assessment]
-        info.append(f"{llm.ASSESSMENTS[analysis.assessment]}\n", style=f"bold {('cyan', 'yellow', 'red')[level]}")
+        info.append(f"{llm.ASSESSMENTS[analysis.assessment]}\n", style=f"bold {(colours.info, colours.warning, colours.danger)[level]}")
         for reason in analysis.reasons:
             info.append(f"• [{', '.join(reason.evidence_ids)}] ", style="bold")
             info.append(f"{reason.explanation}\n")
@@ -207,7 +211,7 @@ def append_analysis(info: Text, snapshot: Snapshot, analysis: Analysis | None, a
 
 
 def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: bool | None = None,
-              filtering: str = "") -> Text:
+              filtering: str = "", colours: Colours = designs.BY_NAME[designs.DEFAULT].colours) -> Text:
     """The side panel. Built from Text objects, so page content is never parsed as markup."""
     info = Text()
 
@@ -216,15 +220,15 @@ def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: b
         info.append(f"{safe_text(value)}\n\n", style=style)
 
     level = llm.overall_level(snapshot, analysis)
-    label, style = RISK[level]
+    label, style = risk_badge(level, colours)
     info.append(f" {label} ", style=style)
     if level > llm.overall_level(snapshot, None):
         info.append("  raised by Gemma", style="dim")
     info.append("\n\n")
-    append_analysis(info, snapshot, analysis, available)
+    append_analysis(info, snapshot, analysis, available, colours)
     info.append(f"Findings ({len(snapshot.findings)})\n", style="bold underline")
     if snapshot.findings:
-        append_findings(info, snapshot.findings)
+        append_findings(info, snapshot.findings, colours)
     else:
         info.append("No findings in inspected content.\n\n")
     row("Mode", "static (no JavaScript)" if snapshot.mode == "static" else
@@ -236,17 +240,17 @@ def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: b
     if snapshot.redirects:
         hops = [f"{'JS' if r.kind == 'javascript' else r.status or '→'} {_shorten(r.url)}" for r in snapshot.redirects]
         row(f"Redirects ({len(snapshot.redirects)})", "\n".join(hops + [f"→ {_shorten(snapshot.final_url)}"]),
-            "yellow")
+            colours.warning)
     if snapshot.requests:
         row("Requests", request_summary(snapshot))
     if filtering:
-        row("Filtering", filtering, "yellow" if filtering.startswith("unavailable") else "")
+        row("Filtering", filtering, colours.warning if filtering.startswith("unavailable") else "")
     if not snapshot.error:
         with_password = sum(form.has_password for form in snapshot.forms)
         row("Cookies", cookie_summary(snapshot.cookie_choices))
         row("Links", str(len(snapshot.links)))
         row("Forms", f"{len(snapshot.forms)}" + (f" ({with_password} with a password field)" if with_password else ""),
-            "red" if with_password else "")
+            colours.danger if with_password else "")
     if snapshot.coverage:
         row("Coverage", "\n".join(f"• {note}" for note in snapshot.coverage), "dim")
     return info
@@ -269,28 +273,40 @@ class ConfirmBar(Static, can_focus=True):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.url = ""
+        self.findings: list[Finding] = []
 
     def ask(self, url: str, findings: list[Finding]) -> None:
-        self.url = url
+        self.url, self.findings = url, findings
+        self.redraw()
+        self.display = True
+        self.focus()
+
+    def redraw(self) -> None:
+        url, colours = self.url, self.app.colours
         text = Text()
         text.append("Open this link?  ", style="bold")
         text.append(safe_text(url), style="underline")
         shown, real = url_checks.host_forms(_host(url))
         if shown != real:
-            text.append(f"  (really {real})", style="bold yellow")
+            text.append(f"  (really {real})", style=f"bold {colours.warning}")
         text.append("\n\n")
-        append_findings(text, findings, explain=False)
+        append_findings(text, self.findings, colours, explain=False)
         text.append("Enter: open    Esc: don't open", style="dim")
         self.update(text)
-        self.display = True
-        self.focus()
 
     def action_decide(self, confirmed: bool) -> None:
         self.display = False
         self.post_message(self.Decided(self.url, confirmed))
 
 
+class CloseButton(Static):
+    def on_click(self) -> None:
+        self.app.exit()
+
+
 class LinkInspector(App):
+    TITLE = "linkinspector"
+    CSS_PATH = "designs.tcss"
     CSS = """
     #main { height: 1fr; }
     #reader { width: 1fr; padding: 0 1; }
@@ -313,11 +329,14 @@ class LinkInspector(App):
         Binding("f", "forward", show=False),
         Binding("a", "ask_gemma", show=False),
         Binding("escape", "focus_page", show=False),
+        Binding("f2", "next_design", "Design"),
     ]
 
-    def __init__(self, start_url: str | None = None, ai_host: str | None = None, ai_client=None) -> None:
+    def __init__(self, start_url: str | None = None, ai_host: str | None = None, ai_client=None,
+                 design: str | None = None) -> None:
         super().__init__()
         self.start_url = start_url
+        self.requested_design = design
         self.history: list[Snapshot] = []
         self.position = -1
         self.next_page_id = 0
@@ -330,6 +349,10 @@ class LinkInspector(App):
         self.javascript = False  # JavaScript mode, for this and new pages
 
     def compose(self) -> ComposeResult:
+        with Horizontal(id="titlebar"):
+            yield Static(id="titlebar-text")
+            yield Static("─  □", id="titlebar-buttons")
+            yield CloseButton("✕", id="titlebar-close")
         yield AddressBar(placeholder="Paste a link, or type words to search, and press Enter", id="url")
         with Horizontal(id="main"):
             with VerticalScroll(id="reader"):
@@ -342,11 +365,46 @@ class LinkInspector(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        for design in designs.DESIGNS:
+            self.register_theme(design.theme)
+        chosen = self.requested_design or designs.load_choice()
+        self.remembered_design = chosen if chosen in self.available_themes else designs.DEFAULT
+        self.theme = self.remembered_design
+        self.theme_changed_signal.subscribe(self, self.design_changed)
+        self.update_titlebar()
         self.run_worker(self.load_filters(), group="filters", exit_on_error=False)
         self.run_worker(self.analyst.run(), group="gemma", exit_on_error=False)
         self.run_worker(self.warm_up(), group="gemma-warm-up", exit_on_error=False)
         if self.start_url:
             self.request_navigation(self.start_url, from_link=False)
+
+    @property
+    def colours(self) -> Colours:
+        return designs.colours_for(self.current_theme)
+
+    def design_changed(self, theme) -> None:
+        """Also runs when a theme is picked in the command palette (ctrl+p, "Change theme")."""
+        if theme.name != self.remembered_design:  # remember the user's choice, not the startup one
+            self.remembered_design = theme.name
+            designs.save_choice(theme.name)
+        self.update_titlebar()
+        if self.current:
+            self.refresh_side()
+        confirm = self.query_one(ConfirmBar)
+        if confirm.display:
+            confirm.redraw()
+
+    def action_next_design(self) -> None:
+        names = [design.name for design in designs.DESIGNS]
+        following = names[(names.index(self.theme) + 1) % len(names)] if self.theme in names else names[0]
+        self.theme = following
+        self.notify(f"Design: {designs.BY_NAME[following].label}  (F2 for the next one)")
+
+    def update_titlebar(self) -> None:
+        design = designs.BY_NAME.get(self.theme)
+        icon = design.icon if design else "◆"
+        page = f" — {self.current.title or self.current.final_url}" if self.current else ""
+        self.query_one("#titlebar-text", Static).update(Text(safe_text(f"{icon} linkinspector{page}")))
 
     async def load_filters(self) -> None:
         try:
@@ -377,7 +435,8 @@ class LinkInspector(App):
         snapshot = self.current
         analysis = self.analyses.get(snapshot.page_id)
         filtering = self.filters.summary if self.filters else "loading the filter lists…"
-        self.query_one("#info", Static).update(page_info(snapshot, analysis, self.analyst.available, filtering))
+        self.query_one("#info", Static).update(
+            page_info(snapshot, analysis, self.analyst.available, filtering, self.colours))
         count = len(snapshot.findings)
         where = f"{count} finding{'s' * (count != 1)} · page {self.position + 1} of {len(self.history)}"
         if analysis and analysis.status in ("queued", "analysing"):
@@ -502,6 +561,7 @@ class LinkInspector(App):
     async def show(self, snapshot: Snapshot) -> None:
         self.query_one("#url", Input).value = snapshot.final_url
         self.query_one("#title", Static).update(Text(safe_text(snapshot.title or snapshot.final_url), style="bold"))
+        self.update_titlebar()
         if snapshot.error:
             body = f"## Could not open this page\n\n{snapshot.error}"
         else:
@@ -539,6 +599,8 @@ class LinkInspector(App):
 def main() -> None:
     parser = argparse.ArgumentParser(description="A read-only terminal browser for checking suspicious links.")
     parser.add_argument("url", nargs="?", help="a link to open straight away")
+    parser.add_argument("--design", choices=[design.name for design in designs.DESIGNS],
+                        help="the look to start with (F2 cycles through them; your last choice is remembered)")
     parser.add_argument("--update-filters", action="store_true",
                         help=f"download the tracker filter lists to {blocking.LIST_DIR} and exit")
     args = parser.parse_args()
@@ -546,7 +608,7 @@ def main() -> None:
         for line in blocking.update():
             print(line)
         return
-    LinkInspector(args.url).run()
+    LinkInspector(args.url, design=args.design).run()
 
 
 if __name__ == "__main__":

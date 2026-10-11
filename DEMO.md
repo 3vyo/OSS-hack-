@@ -41,6 +41,10 @@ on this laptop."
 **7. Close (15 s).** "No cookies kept, no scripts unless you ask, never your router or your own computer:
 a redirect to 127.0.0.1 is refused at the network level. And it's all open source, MIT licensed."
 
+**Optional, if there's time (10 s).** Press **F2** a few times: Windows 95, XP, Vista and 7 looks,
+plus high contrast. "Same tool, whatever era of Windows you grew up with, and a high-contrast mode
+for accessibility."
+
 ## If something goes wrong
 
 - **Gemma is slow:** keep talking through the findings; they appear instantly. Or press alt+← to return to a page whose answer you already have.

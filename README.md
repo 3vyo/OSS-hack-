@@ -84,11 +84,33 @@ the app rather than causing a crash.
 | ctrl+g | Ask Gemma about this page |
 | ctrl+v | Paste into the address bar |
 | ctrl+c | Copy selected text, or the page address if nothing is selected |
-| ctrl+q | Quit |
+| F2 | Next design (see below) |
+| ctrl+q | Quit (or click ✕ in the title bar) |
 
 The side panel shows the overall risk, Gemma's explanation, each finding with its evidence ID, and the
 redirect chain. It also shows what the request rules did, the filter lists in use, cookie handling and
 what the page could and couldn't inspect (coverage).
+
+## Designs
+
+Seven looks, each with its own colours and window chrome: title bar, borders and a taskbar-style
+footer.
+- **Modern** (Windows 11 style, the default)
+- **Windows 7** (Aero)
+- **Windows Vista** (Aero glass)
+- **Windows XP** (Luna)
+- **Windows 95** (Classic)
+- **High contrast**
+- **Retro terminal**
+
+Press **F2** to cycle through them, or start with one using `--design windows-95`. Your last choice is
+remembered in `~/.config/linkinspector/settings.json`.
+
+They're Textual themes, so they also appear in the command palette (ctrl+p → "Change theme"), next to
+Textual's own themes, which work too. Every design's finding colours pass a contrast check (at least
+4.5:1, the WCAG AA level), so warnings stay readable on the light Windows backgrounds.
+
+![The same page in all seven designs](docs/designs.png)
 
 ## Demo pages (`https://home.test/`)
 
@@ -121,6 +143,7 @@ URL ──► URL checks (lookalikes, known bad sites) ── confirm bar ──
 | File | Role |
 |---|---|
 | `app.py` | The Textual interface |
+| `designs.py` / `designs.tcss` | The seven designs |
 | `fetch_static.py` / `browser.py` | The two ways of loading a page |
 | `proxy.py` | Network rules for Chromium |
 | `policy.py` | URL and network rules |

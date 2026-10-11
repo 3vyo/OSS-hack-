@@ -1,0 +1,75 @@
+/* Window chrome for each design (designs.py). Textual gives the app a "-theme-<name>" class. */
+
+#titlebar { height: 1; background: $panel; color: $foreground; }
+#titlebar-text { width: 1fr; padding: 0 1; text-style: bold; }
+#titlebar-buttons { width: auto; padding: 0 1; }
+#titlebar-close { width: auto; padding: 0 1; }
+#titlebar-close:hover { background: $error; color: $background; }
+
+/* Modern: flat and quiet, rounded fields, accent on focus. */
+.-theme-modern #titlebar { background: #202020; color: #f3f3f3; }
+.-theme-modern #titlebar-text { text-style: none; }
+.-theme-modern #titlebar-close:hover { background: #c42b1c; color: #ffffff; }
+.-theme-modern #url { border: round #3d3d3d; background: #2b2b2b; }
+.-theme-modern #url:focus { border: round #4cc2ff; }
+.-theme-modern #side { background: #272727; border-left: vkey #3d3d3d; }
+.-theme-modern #status { background: #1c1c1c; color: #c8c8c8; }
+
+/* Windows 7: light Aero glass title bar, white window, red close button. */
+.-theme-windows-7 #titlebar { background: #c4d9f1; color: #1e395b; }
+.-theme-windows-7 #titlebar-buttons { color: #1e395b; }
+.-theme-windows-7 #titlebar-close { background: #c7503f; color: #ffffff; }
+.-theme-windows-7 #url { border: round #7da2ce; background: #ffffff; }
+.-theme-windows-7 #url:focus { border: round #3399ff; }
+.-theme-windows-7 #side { background: #f0f0f0; border-left: solid #a0b4cc; }
+.-theme-windows-7 #status { background: #e9eef4; color: #1e1e1e; }
+.-theme-windows-7 #confirm { background: #fff8d6; }
+
+/* Windows Vista: dark glass frame, black-glass taskbar. */
+.-theme-windows-vista #titlebar { background: #1b2a3a; color: #ffffff; }
+.-theme-windows-vista #titlebar-buttons { color: #cfe3f5; }
+.-theme-windows-vista #titlebar-close { background: #c42b1c; color: #ffffff; }
+.-theme-windows-vista #url { border: round #2c5d87; background: #0e1b28; }
+.-theme-windows-vista #url:focus { border: round #6fd0ff; }
+.-theme-windows-vista #side { background: #102030; border-left: tall #2c5d87; }
+.-theme-windows-vista #status { background: #0a121b; color: #cfe3f5; }
+
+/* Windows XP: blue Luna title bar, beige window, orange-red close, green "Start" key labels. */
+.-theme-windows-xp #titlebar { background: #0054e3; color: #ffffff; }
+.-theme-windows-xp #titlebar-buttons { background: #2b71f0; color: #ffffff; }
+.-theme-windows-xp #titlebar-close { background: #e04a2f; color: #ffffff; }
+.-theme-windows-xp #reader { background: #ffffff; }
+.-theme-windows-xp #url { border: solid #7f9db9; background: #ffffff; }
+.-theme-windows-xp #url:focus { border: solid #316ac5; }
+.-theme-windows-xp #side { background: #ece9d8; border-left: solid #7f9db9; }
+.-theme-windows-xp #status { background: #ece9d8; color: #000000; }
+.-theme-windows-xp #confirm { background: #ffffe1; }
+
+/* Windows 95: navy title bar, grey bevelled panels, sunken white fields. */
+.-theme-windows-95 #titlebar { background: #000080; color: #ffffff; }
+.-theme-windows-95 #titlebar-buttons { background: #c0c0c0; color: #000000; }
+.-theme-windows-95 #titlebar-close { background: #c0c0c0; color: #000000; }
+.-theme-windows-95 #reader { background: #ffffff; }
+.-theme-windows-95 #url, .-theme-windows-95 #url:focus {
+    background: #ffffff; color: #000000;
+    border-top: tall #808080; border-left: tall #808080; border-bottom: tall #ffffff; border-right: tall #ffffff;
+}
+.-theme-windows-95 #side { background: #c0c0c0; border-left: outer #ffffff; }
+.-theme-windows-95 #status { background: #c0c0c0; color: #000000; }
+.-theme-windows-95 #confirm { background: #c0c0c0; border-top: outer #ffffff; }
+
+/* High contrast: white on black, heavy white borders, yellow focus. */
+.-theme-high-contrast #titlebar { background: #000000; color: #ffffff; }
+.-theme-high-contrast #titlebar-close { color: #ffff00; }
+.-theme-high-contrast #url { border: heavy #ffffff; background: #000000; }
+.-theme-high-contrast #url:focus { border: heavy #ffff00; }
+.-theme-high-contrast #side { border-left: heavy #ffffff; }
+.-theme-high-contrast #status { background: #000000; color: #ffffff; }
+.-theme-high-contrast #confirm { background: #000000; border-top: heavy #ffff00; }
+
+/* Retro terminal: green phosphor, ASCII borders. */
+.-theme-retro-terminal #titlebar { background: #003300; color: #33ff66; }
+.-theme-retro-terminal #url { border: ascii #1f7f3f; background: #000000; }
+.-theme-retro-terminal #url:focus { border: ascii #33ff66; }
+.-theme-retro-terminal #side { border-left: ascii #1f7f3f; }
+.-theme-retro-terminal #status { background: #001a00; color: #33ff66; }

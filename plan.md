@@ -286,6 +286,11 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
   - **ctrl+c** copies mouse-selected text, or the page address when nothing is selected
 - **Search from the address bar:** words (or anything without a dot) go to DuckDuckGo's no-JavaScript results page, `html.duckduckgo.com`. Its results are rendered by our own code, because the text extractor dropped them.
 - **Search engines' tracking redirects are unwrapped** in the link table (`duckduckgo.com/l/?uddg=…`, `google.com/url?q=…`). Links show and open their real destination, and search result pages don't trigger misleading-link warnings.
+- **Designs (F2):** Modern, Windows 7, Windows Vista, Windows XP, Windows 95, High contrast and Retro terminal (`designs.py`, `designs.tcss`).
+  - Each is a Textual theme plus window chrome (title bar with a working ✕, borders, taskbar-style footer), keyed on the `-theme-<name>` class Textual gives the app.
+  - Finding, verdict and badge colours come from the active design; any other Textual theme gets colours from its own palette.
+  - The choice is remembered in `~/.config/linkinspector/settings.json`, and `--design` picks one for a single run.
+  - A contrast test (WCAG AA, 4.5:1) caught Windows XP's green and Windows 95's red, amber and green on the grey panel, all darkened to pass.
 - **Markdown auto-linking is off.** Text that merely looks like a domain stays text; only links the page itself made can be clicked.
 - **Security checks still see the full page:** links and forms come from the original HTML.
 - **Coverage note** when banners were removed, and a **consent-wall note** when the page is mostly a consent notice or the host starts with `consent.`. linkinspector never accepts cookies, so it will always land on these.
