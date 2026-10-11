@@ -365,7 +365,7 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - [x] Rehearsed with AI on (`scripts/rehearse_demo.py`: 13/13 beats, Gemma 19–22 s per answer)
 - [x] Rehearsed with AI off (11/11 beats)
 - [ ] Rehearsed with WiFi off — automated run in a network namespace with no network at all passed 11/11 (Gemma unreachable there too); still do one real WiFi-off run with Gemma yourself
-- [ ] Pushed, and repo made public
+- [ ] Pushed, and repo made public — repo is public; everything up to `33da955`-era work is pushed, the designs commit and later still to push
 - [ ] Submitted
 
 ## Demo plan (Gemma 4 track)
