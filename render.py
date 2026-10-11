@@ -3,7 +3,7 @@
 import copy
 import re
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import lxml.etree
 import lxml.html
@@ -34,6 +34,49 @@ class Page:
     markdown: str
     notes: tuple[str, ...]
     cookie_choices: tuple[str, ...] = ()  # what a hidden cookie notice offered
+    needs_javascript: bool = False
+
+
+# Search engines wrap result links in a tracking redirect; the real destination is a parameter.
+_REDIRECTORS = {"duckduckgo.com": ("/l/", "uddg"), "www.google.com": ("/url", "q"), "google.com": ("/url", "q")}
+
+
+def unwrap_redirect(url: str) -> str:
+    """The real destination of a search engine's tracking link, e.g. duckduckgo.com/l/?uddg=…"""
+    parts = urlsplit(url)
+    path, parameter = _REDIRECTORS.get(parts.hostname or "", ("", ""))
+    if parameter and parts.path.startswith(path):
+        target = parse_qs(parts.query).get(parameter, [""])[0]
+        if urlsplit(target).scheme in ("http", "https"):
+            return target
+    return url
+
+
+_NEEDS_JS_TEXT = re.compile(r"enable javascript|javascript is (?:disabled|required|not enabled)|turn on javascript|"
+                            r"not redirected", re.IGNORECASE)
+
+
+def _tells_to_enable_javascript(noscript) -> bool:
+    """A <noscript> block that sends browsers without JavaScript elsewhere, like Google's."""
+    refresh = any("refresh" in (meta.get("http-equiv") or "").lower() for meta in noscript.iter("meta"))
+    return refresh or bool(_NEEDS_JS_TEXT.search(noscript.text_content()))
+
+
+def _duckduckgo_results(doc, base: str) -> str | None:
+    """DuckDuckGo's no-JavaScript results page as a Markdown list (the text extractor drops the results)."""
+    items = []
+    for result in doc.find_class("result"):
+        if "result--ad" in (result.get("class") or ""):
+            continue
+        anchors = result.find_class("result__a")
+        if not anchors or not anchors[0].get("href"):
+            continue
+        target = unwrap_redirect(urljoin(base, anchors[0].get("href")))
+        title = _squash(anchors[0].text_content()).replace("[", "(").replace("]", ")")
+        snippets = result.find_class("result__snippet")
+        snippet = _squash(snippets[0].text_content()) if snippets else ""
+        items.append(f"**[{title}](<{target}>)**  \n{urlsplit(target).hostname}\n\n{snippet}")
+    return "\n\n".join(items) or None
 
 
 def _document(html: str):
@@ -150,14 +193,21 @@ def parse(html: str, url: str) -> Page:
 
     base = _base_url(doc, url)
     links = tuple(
-        Link(_squash(a.text_content()), href.strip(), urljoin(base, href.strip()))
+        Link(_squash(a.text_content()), href.strip(), unwrap_redirect(urljoin(base, href.strip())))
         for a in doc.iter("a") if (href := a.get("href")) is not None
     )
     notes = []
-    # Links and forms above come from the full page; only the reader text drops consent banners.
+    # Links and forms above come from the full page; only the reader text drops consent banners
+    # and "please enable JavaScript" redirects meant for browsers like this one.
     readable = copy.deepcopy(doc)
     cookie_choices = _remove_consent_banners(readable)
-    markdown = trafilatura.extract(
+    js_notices = [noscript for noscript in readable.iter("noscript") if _tells_to_enable_javascript(noscript)]
+    for noscript in js_notices:
+        noscript.drop_tree()
+    markdown = None
+    if urlsplit(url).hostname == "html.duckduckgo.com":
+        markdown = _duckduckgo_results(readable, base)
+    markdown = markdown or trafilatura.extract(
         lxml.html.tostring(readable, encoding="unicode"), url=url, output_format="markdown",
         include_links=True, include_formatting=True, include_tables=True, include_images=False,
         favor_recall=True, with_metadata=False,
@@ -167,8 +217,9 @@ def parse(html: str, url: str) -> Page:
         notes.append("no main article found; showing all page text")
     if (cookie_choices and len(markdown) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
         notes.append(CONSENT_WALL_NOTE)
-    if len(markdown) < 300 and doc.find(".//script") is not None:
-        notes.append("this page seems to need JavaScript to show its content, which static mode doesn't run")
+    needs_javascript = bool(js_notices) or (len(markdown) < 300 and doc.find(".//script") is not None)
+    if needs_javascript:
+        notes.append("this page needs JavaScript to show its content, which static mode doesn't run")
     return Page(
         title=_squash(doc.findtext(".//title") or ""),
         base_url=base,
@@ -177,4 +228,5 @@ def parse(html: str, url: str) -> Page:
         markdown=safe_text(markdown),
         notes=tuple(notes),
         cookie_choices=tuple(safe_text(choice) for choice in cookie_choices),
+        needs_javascript=needs_javascript,
     )

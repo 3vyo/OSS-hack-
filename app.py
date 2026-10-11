@@ -1,8 +1,9 @@
 """Textual UI, navigation state, findings/coverage/AI/filtering status."""
 
 import sys
-from urllib.parse import unquote, urldefrag, urljoin, urlsplit
+from urllib.parse import quote_plus, unquote, urldefrag, urljoin, urlsplit
 
+from markdown_it import MarkdownIt
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -11,6 +12,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
 from textual.widgets import Footer, Input, Markdown, Static
 
+import clipboard
 import fetch_static
 import llm
 import page_checks
@@ -21,14 +23,55 @@ from render import safe_text
 from snapshot import Finding, Snapshot
 
 HOME_URL = "https://home.test/"
+# DuckDuckGo's results page works without JavaScript; Google's doesn't.
+SEARCH_URL = "https://html.duckduckgo.com/html/?q={}"
 WELCOME = f"""\
 # linkinspector
 
-Paste a link in the bar above and press **Enter**. Pages are fetched without running
-any JavaScript, and links only open through linkinspector, never in another browser.
+Paste a link in the bar above and press **Enter**, or type some words to search the web
+(with DuckDuckGo). Pages are fetched without running any JavaScript, and links only open
+through linkinspector, never in another browser.
+
+**Copy and paste:** paste a link with **ctrl+v**. To copy, select text with the mouse and press
+**ctrl+c**; with nothing selected, **ctrl+c** copies the page's address.
 
 [Open the demo pages]({HOME_URL})
 """
+NEEDS_JAVASCRIPT = """\
+> **This page needs JavaScript, which static mode doesn't run,** so it can't be used here, and what's
+> below may be only menus or a fallback message. JavaScript mode isn't built yet. To search the web,
+> type words into the address bar.
+
+---
+
+"""
+
+
+def markdown_parser() -> MarkdownIt:
+    """Textual's parser without auto-linking: only text the page itself linked becomes a link."""
+    return MarkdownIt("gfm-like").disable("linkify")
+
+
+def address_to_url(text: str) -> str:
+    """What the user typed in the address bar: a link, a bare domain, or words to search for."""
+    text = text.strip()
+    if "://" in text:
+        return text
+    if " " in text or "." not in text:
+        return SEARCH_URL.format(quote_plus(text))
+    return f"https://{text}"
+
+
+class AddressBar(Input):
+    """The URL bar. ctrl+v pastes from the desktop clipboard, not just Textual's own."""
+
+    def action_paste(self) -> None:
+        text = clipboard.paste()
+        if text is None:
+            super().action_paste()
+            return
+        start, end = self.selection
+        self.replace(" ".join(text.split()), start, end)  # a link copied with line breaks
 
 SEVERITY_COLOUR = {"danger": "red", "warning": "yellow", "info": "cyan"}
 SEVERITY_ORDER = {"danger": 0, "warning": 1, "info": 2}
@@ -208,6 +251,8 @@ class LinkInspector(App):
         Binding("alt+left", "back", "Back"),
         Binding("alt+right", "forward", "Forward"),
         Binding("ctrl+g", "ask_gemma", "Ask Gemma"),
+        # Selected text is copied by the screen's own ctrl+c; this runs when nothing is selected.
+        Binding("ctrl+c", "copy_address", "Copy"),
         Binding("b", "back", show=False),
         Binding("f", "forward", show=False),
         Binding("a", "ask_gemma", show=False),
@@ -225,11 +270,11 @@ class LinkInspector(App):
         self.analyst = llm.Analyst(self.analysis_updated, self.is_current_page, host=ai_host, client=ai_client)
 
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="Paste a link and press Enter", id="url")
+        yield AddressBar(placeholder="Paste a link, or type words to search, and press Enter", id="url")
         with Horizontal(id="main"):
             with VerticalScroll(id="reader"):
                 yield Static(id="title")
-                yield Markdown(WELCOME, id="content", open_links=False)
+                yield Markdown(WELCOME, id="content", open_links=False, parser_factory=markdown_parser)
             with VerticalScroll(id="side"):
                 yield Static(id="info")
         yield ConfirmBar(id="confirm")
@@ -282,11 +327,21 @@ class LinkInspector(App):
     def set_status(self, message: str) -> None:
         self.query_one("#status", Static).update(Text(safe_text(message)))
 
+    def copy_to_clipboard(self, text: str) -> None:
+        super().copy_to_clipboard(text)  # Textual's own clipboard, plus the OSC 52 escape code
+        clipboard.copy(text)  # the desktop clipboard, for terminals that ignore OSC 52
+
+    def action_copy_address(self) -> None:
+        if self.current is None:
+            self.notify("There's no page address to copy yet.")
+            return
+        self.copy_to_clipboard(self.current.final_url)
+        self.notify(f"Copied {self.current.final_url}", markup=False)
+
     @on(Input.Submitted, "#url")
     def url_submitted(self, event: Input.Submitted) -> None:
-        url = event.value.strip()
-        if url:
-            self.request_navigation(url if "://" in url else f"https://{url}", from_link=False)
+        if event.value.strip():
+            self.request_navigation(address_to_url(event.value), from_link=False)
 
     @on(Markdown.LinkClicked)
     def link_clicked(self, event: Markdown.LinkClicked) -> None:
@@ -356,6 +411,8 @@ class LinkInspector(App):
             body = f"## Could not open this page\n\n{snapshot.error}"
         else:
             body = snapshot.markdown or "*This page has no readable text.*"
+            if snapshot.needs_javascript:
+                body = NEEDS_JAVASCRIPT + body
         await self.query_one("#content", Markdown).update(body)
         self.query_one("#reader", VerticalScroll).scroll_home(animate=False)
         self.query_one("#side", VerticalScroll).scroll_home(animate=False)

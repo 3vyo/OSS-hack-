@@ -163,6 +163,7 @@ url_checks.py   code-based URL checks (no network)
 page_checks.py  forms, misleading links, resource references
 render.py       readable Markdown, safe terminal text, resolved link table
 llm.py          Ollama client, request queue, evidence prompts, validation, streaming
+clipboard.py    desktop clipboard (wl-copy/wl-paste, xclip, xsel, pbcopy)
 audio.py        ElevenLabs text-to-speech and mpv playback (stretch)
 filters/        committed demo rules (demo.txt)
 fixtures/       demo pages for .test hostnames and local request endpoints
@@ -277,7 +278,15 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
   - its name or role looks like a consent tool (OneTrust, Cookiebot, GOV.UK-style banners, dialogs…), and it talks about choices
   - it offers two or more cookie buttons ("Reject all", "Accept all", "Allow", "Decline"…). This catches banners with meaningless class names, like **Google's**. The *smallest* element around the buttons is taken, never a wrapper around a whole small page.
 - **There is no accept/reject step in static mode, by design:** nothing is ever stored, so every visit works like "Reject all". The side panel's **Cookies** line says so, and lists what a hidden notice offered (e.g. "Reject all, Accept all"). Checked live: Google and GOV.UK both show their offered choices.
-- **"Needs JavaScript" note** when a page has scripts but almost no text (YouTube, Google Search's "click here if you are not redirected" page).
+- **"Needs JavaScript" notice** at the top of the reader, when a page's `<noscript>` sends browsers without JavaScript elsewhere (Google's meta refresh to "click here if you are not redirected"), or when a page has scripts but almost no text (YouTube). That `<noscript>` text is dropped from the reader. **Google's homepage and search only work in JavaScript mode.**
+
+#### Fixes from trying the app
+- **Copy and paste in a VTE terminal (GNOME Terminal, Zorin) on Wayland.** Textual copies with an OSC 52 escape code, which VTE ignores, and its ctrl+v pastes only from Textual's own clipboard. `clipboard.py` uses `wl-copy`/`wl-paste`, falling back to `xclip`/`xsel` and `pbcopy`. Now:
+  - **ctrl+v** in the address bar pastes from the desktop clipboard (ctrl+shift+v, the terminal's own paste, also works)
+  - **ctrl+c** copies mouse-selected text, or the page address when nothing is selected
+- **Search from the address bar:** words (or anything without a dot) go to DuckDuckGo's no-JavaScript results page, `html.duckduckgo.com`. Its results are rendered by our own code, because the text extractor dropped them.
+- **Search engines' tracking redirects are unwrapped** in the link table (`duckduckgo.com/l/?uddg=…`, `google.com/url?q=…`). Links show and open their real destination, and search result pages don't trigger misleading-link warnings.
+- **Markdown auto-linking is off.** Text that merely looks like a domain stays text; only links the page itself made can be clicked.
 - **Security checks still see the full page:** links and forms come from the original HTML.
 - **Coverage note** when banners were removed, and a **consent-wall note** when the page is mostly a consent notice or the host starts with `consent.`. linkinspector never accepts cookies, so it will always land on these.
 - **Gemma's prompt** says cookie notices and cookie-choice forms aren't a phishing sign. Removing banners also stops them using up Gemma's 800-character page-text budget.

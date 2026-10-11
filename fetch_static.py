@@ -59,7 +59,7 @@ def _build(page_id: int, url: str, response: httpx.Response, body: bytes, trunca
         status=response.status_code, content_type=content_type, redirects=tuple(redirects),
         original_html=html, title=page.title, base_url=page.base_url, markdown=page.markdown,
         links=page.links, forms=page.forms, coverage=tuple(coverage) + page.notes,
-        cookie_choices=page.cookie_choices,
+        cookie_choices=page.cookie_choices, needs_javascript=page.needs_javascript,
     )
 
 

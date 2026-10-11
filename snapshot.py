@@ -74,6 +74,7 @@ class Snapshot:
     findings: tuple[Finding, ...] = ()
     coverage: tuple[str, ...] = ()
     cookie_choices: tuple[str, ...] = ()  # what a hidden cookie notice offered, e.g. ("Reject all", "Accept all")
+    needs_javascript: bool = False
     error: str = ""
 
     @classmethod
