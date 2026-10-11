@@ -351,10 +351,44 @@ def _password_forms(readable, base: str) -> str:
     return "\n\n---\n\n**Forms on this page**\n\n" + "\n\n".join(structured_markdown(form, base) for form in forms)
 
 
+def link_text(markdown: str) -> str:
+    """Markdown links replaced by their text: [Privacy](<https://…>) → Privacy."""
+    return re.sub(r"\[([^\]]*)\]\(<?[^)>]*>?\)", r"\1", markdown)
+
+
 def plain_text(markdown: str) -> str:
     """Markdown without link targets or control brackets, e.g. for measuring how much a page says."""
-    text = re.sub(r"\[([^\]]*)\]\(<?[^)>]*>?\)", r"\1", markdown)
-    return re.sub(r"`\[[^`]*\]`", " ", text)
+    return re.sub(r"`\[[^`]*\]`", " ", link_text(markdown))
+
+
+# Paragraph numbers (¶1, ¶2, …), shown in the reader while the chat is open and given to Gemma, so
+# "what does ¶3 say?" means the same block to both. Headings, quotes, rules and tables aren't numbered.
+_UNNUMBERED = ("#", ">", "|", "---", "```")
+_LIST_ITEM = re.compile(r"^(\s*(?:[-*+]|\d+[.)])\s+)")
+
+
+def numbered_blocks(markdown: str) -> list[tuple[int | None, str]]:
+    blocks, number = [], 0
+    for block in markdown.split("\n\n"):
+        if not block.strip():
+            continue
+        if block.lstrip().startswith(_UNNUMBERED):
+            blocks.append((None, block))
+        else:
+            number += 1
+            blocks.append((number, block))
+    return blocks
+
+
+def with_paragraph_numbers(markdown: str) -> str:
+    parts = []
+    for number, block in numbered_blocks(markdown):
+        if number is not None:
+            marker = f"`¶{number}` "
+            block = (_LIST_ITEM.sub(lambda m: m.group(1) + marker, block, count=1) if _LIST_ITEM.match(block)
+                     else marker + block)
+        parts.append(block)
+    return "\n\n".join(parts)
 
 
 def parse(html: str, url: str, scripts_ran: bool = False) -> Page:
@@ -395,10 +429,15 @@ def parse(html: str, url: str, scripts_ran: bool = False) -> Page:
             markdown = structured
     if (cookie_choices and len(plain_text(markdown)) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
         notes.append(CONSENT_WALL_NOTE)
+    # A <noscript> "enable JavaScript" notice only means the page needs it if there's little else to read:
+    # news sites carry one for their video players next to a full article.
+    text_length = len(plain_text(markdown))
     needs_javascript = not scripts_ran and (
-        bool(js_notices) or (len(plain_text(markdown)) < 300 and doc.find(".//script") is not None))
+        (bool(js_notices) and text_length < 1500) or (text_length < 300 and doc.find(".//script") is not None))
     if needs_javascript:
         notes.append("this page needs JavaScript to show its content, which static mode doesn't run")
+    elif js_notices and not scripts_ran:
+        notes.append("parts of this page, such as videos or interactive features, need JavaScript (ctrl+r)")
     return Page(
         title=_squash(doc.findtext(".//title") or ""),
         base_url=base,

@@ -69,6 +69,17 @@ async def main():
                   f"{analysis.assessment if analysis else None} in {analysis.seconds:.0f} s" if analysis else "")
             if OUT:
                 (OUT / "screenshot.svg").write_text(app.export_screenshot())
+            await pilot.press("ctrl+t")
+            await pilot.pause(0.5)
+            await pilot.press(*"what does paragraph 2 say?", "enter")
+            started = time.perf_counter()
+            await pilot.pause(0.3)
+            while app.chat_busy and time.perf_counter() - started < 180:
+                await pilot.pause(0.5)
+            answer = (app.chats.get(app.current.page_id) or [("", "")])[-1][1]
+            check("2b chat answers about ¶2", "minute" in answer.lower() or "log in" in answer.lower(),
+                  f"in {time.perf_counter() - started:.0f} s: {answer[:70]}")
+            await pilot.press("escape")
 
         app.request_navigation("https://pаypal.test/", from_link=False)
         await pilot.pause(0.3)

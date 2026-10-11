@@ -13,7 +13,7 @@ from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Footer, Input, Markdown, Static
 
@@ -28,6 +28,7 @@ import url_checks
 from browser import Browser
 from designs import Colours
 from llm import Analysis
+import render
 from render import safe_text
 from snapshot import Finding, Snapshot
 
@@ -227,7 +228,7 @@ def append_analysis(info: Text, snapshot: Snapshot, analysis: Analysis | None, a
         elif snapshot.error:
             message = "Not run: there's no page content to explain."
         else:
-            message = "Not run (nothing above needs explaining). Press ctrl+g to ask Gemma about this page."
+            message = "Not run (nothing above needs explaining). Press ctrl+g for Gemma's verdict, or ctrl+t to ask it about the page."
     info.append(f"{message}\n\n", style="dim" if status is None else "")
 
 
@@ -325,6 +326,16 @@ class ConfirmBar(Static, can_focus=True):
         self.post_message(self.Decided(self.url, confirmed, self.external))
 
 
+class ChatInput(Input):
+    BINDINGS = [Binding("escape", "app.close_chat", "Close chat", show=False)]
+
+
+CHAT_INTRO = ("Ask anything about this page, e.g. “what does ¶3 say?” or “what does the form ask for?”. "
+              "Paragraph numbers are shown in the page while this is open. Gemma starts reading the page now; "
+              "the first answer can take up to a minute on a laptop, follow-ups are much quicker. Gemma is a small "
+              "model and can get details wrong, so check the ¶ it cites.")
+
+
 class CloseButton(Static):
     def on_click(self) -> None:
         self.app.exit()
@@ -341,16 +352,21 @@ class LinkInspector(App):
     #confirm { display: none; height: auto; max-height: 16; padding: 1 2; background: $boost;
                border-top: heavy $warning; }
     #status { height: 1; background: $panel; padding: 0 1; }
+    #chat { display: none; height: 16; border-top: tall $primary; }
+    #chat-log { height: 1fr; padding: 0 1; }
+    #chat-log .chat-question { padding: 1 0 0 0; text-style: bold; }
+    #chat-log Markdown { padding: 0; margin: 0; }
     """
     BINDINGS = [
         Binding("ctrl+l", "focus_url", "Address"),
         Binding("alt+left", "back", "Back"),
-        Binding("alt+right", "forward", "Forward"),
-        Binding("ctrl+g", "ask_gemma", "Ask Gemma"),
+        Binding("alt+right", "forward", "Forward", show=False),
+        Binding("ctrl+t", "toggle_chat", "Ask about page"),
+        Binding("ctrl+g", "ask_gemma", "Gemma verdict"),
         Binding("ctrl+r", "toggle_javascript", "JavaScript"),
         Binding("r", "toggle_javascript", show=False),
         # Selected text is copied by the screen's own ctrl+c; this runs when nothing is selected.
-        Binding("ctrl+c", "copy_address", "Copy"),
+        Binding("ctrl+c", "copy_address", "Copy", show=False),
         Binding("b", "back", show=False),
         Binding("f", "forward", show=False),
         Binding("a", "ask_gemma", show=False),
@@ -374,6 +390,9 @@ class LinkInspector(App):
         self.filters_ready = asyncio.Event()
         self.browser = Browser(lambda: self.filters)
         self.javascript = False  # JavaScript mode, for this and new pages
+        self.chat_open = False
+        self.chat_busy = False
+        self.chats: dict[int, list[tuple[str, str]]] = {}  # per page: (question, answer)
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="titlebar"):
@@ -387,6 +406,10 @@ class LinkInspector(App):
                 yield Markdown(WELCOME, id="content", open_links=False, parser_factory=markdown_parser)
             with VerticalScroll(id="side"):
                 yield Static(id="info")
+        with Vertical(id="chat"):
+            yield VerticalScroll(id="chat-log")
+            yield ChatInput(placeholder="Ask Gemma about this page, e.g. what does ¶3 say?   Enter: send · Esc: close",
+                            id="chat-input")
         yield ConfirmBar(id="confirm")
         yield Static(id="status")
         yield Footer()
@@ -593,7 +616,8 @@ class LinkInspector(App):
         self.history.append(snapshot)
         self.position = len(self.history) - 1
         await self.show(snapshot)
-        self.action_focus_page()
+        if self.focused is None or self.focused.id == "url":
+            self.action_focus_page()  # but never pull focus away from the chat or anything else you're typing in
         if is_risky(snapshot) and self.analyst.available is not False:
             self.analyst.request(snapshot)  # automatic only when the code checks found something
 
@@ -601,16 +625,127 @@ class LinkInspector(App):
         self.query_one("#url", Input).value = snapshot.final_url
         self.query_one("#title", Static).update(Text(safe_text(snapshot.title or snapshot.final_url), style="bold"))
         self.update_titlebar()
-        if snapshot.error:
-            body = f"## Could not open this page\n\n{snapshot.error}"
-        else:
-            body = snapshot.markdown or "*This page has no readable text.*"
-            if snapshot.needs_javascript:
-                body = NEEDS_JAVASCRIPT + body
-        await self.query_one("#content", Markdown).update(body)
+        await self.query_one("#content", Markdown).update(self.reader_body(snapshot))
         self.query_one("#reader", VerticalScroll).scroll_home(animate=False)
         self.query_one("#side", VerticalScroll).scroll_home(animate=False)
         self.refresh_side()
+        if self.chat_open:
+            if snapshot.error:
+                self.action_close_chat()
+            else:
+                await self.render_chat_log()
+                self.prime_chat()
+
+    def reader_body(self, snapshot: Snapshot) -> str:
+        if snapshot.error:
+            return f"## Could not open this page\n\n{snapshot.error}"
+        body = snapshot.markdown or "*This page has no readable text.*"
+        if self.chat_open and snapshot.markdown:
+            body = render.with_paragraph_numbers(snapshot.markdown)  # the numbers Gemma is given
+        return NEEDS_JAVASCRIPT + body if snapshot.needs_javascript else body
+
+    async def rerender_reader(self) -> None:
+        reader = self.query_one("#reader", VerticalScroll)
+        position = reader.scroll_y
+        await self.query_one("#content", Markdown).update(self.reader_body(self.current))
+        reader.scroll_to(y=position, animate=False)
+
+    # Chat about the current page (ctrl+t).
+
+    def action_toggle_chat(self) -> None:
+        if self.chat_open:
+            self.action_close_chat()
+            return
+        if self.current is None or self.current.error:
+            self.set_status("Open a page first, then press ctrl+t to ask Gemma about it.")
+            return
+        self.chat_open = True
+        self.query_one("#chat").display = True
+        self.query_one("#chat-input", Input).focus()
+        self.run_worker(self.open_chat(), group="chat-ui")
+
+    async def open_chat(self) -> None:
+        await self.rerender_reader()
+        await self.render_chat_log()
+        self.prime_chat()
+
+    def prime_chat(self) -> None:
+        if self.analyst.available is not False:
+            self.analyst.prime(self.current)  # Gemma starts reading the page while you type
+
+    def action_close_chat(self) -> None:
+        if not self.chat_open:
+            return
+        self.chat_open = False
+        self.query_one("#chat").display = False
+        if self.current is not None:
+            self.run_worker(self.rerender_reader(), group="chat-ui")
+        self.action_focus_page()
+
+    def chat_note(self, message: str) -> Static:
+        return Static(Text(message, style="dim italic"))
+
+    async def render_chat_log(self) -> None:
+        log = self.query_one("#chat-log", VerticalScroll)
+        await log.remove_children()
+        exchanges = self.chats.get(self.current.page_id, [])
+        widgets: list[Static | Markdown] = [] if exchanges else [self.chat_note(CHAT_INTRO)]
+        if self.analyst.available is False:
+            widgets.append(self.chat_note("Gemma isn't running, so it can't answer. Start Ollama and try again."))
+        for asked, answered in exchanges:
+            widgets += [Static(Text(f"You: {asked}"), classes="chat-question"),
+                        Markdown(answered, open_links=False, parser_factory=markdown_parser)]
+        await log.mount_all(widgets)
+        log.scroll_end(animate=False)
+
+    @on(Input.Submitted, "#chat-input")
+    async def chat_submitted(self, event: Input.Submitted) -> None:
+        question = " ".join(event.value.split())
+        snapshot = self.current
+        if not question or snapshot is None:
+            return
+        if self.chat_busy:
+            self.set_status("Gemma is still answering the last question.")
+            return
+        event.input.value = ""
+        self.chat_busy = True
+        page_id, history = snapshot.page_id, tuple(self.chats.get(snapshot.page_id, []))
+        log = self.query_one("#chat-log", VerticalScroll)
+        reading = self.analyst.primed != page_id
+        waiting = self.chat_note("Gemma is reading the page…" if reading else "Gemma is thinking…")
+        await log.mount_all([Static(Text(f"You: {question}"), classes="chat-question"), waiting])
+        log.scroll_end(animate=False)
+        parts: list[str] = []
+        shown: dict[str, object] = {}  # the answer widget and its stream, once the first words arrive
+
+        async def on_text(fragment: str) -> None:
+            parts.append(fragment)
+            if not self.is_current_page(page_id):
+                return  # you moved on; the answer is still kept for that page
+            try:
+                if "stream" not in shown:
+                    answer = Markdown("", open_links=False, parser_factory=markdown_parser)
+                    await waiting.remove()
+                    await log.mount(answer)
+                    shown["stream"] = Markdown.get_stream(answer)
+                await shown["stream"].write(fragment)
+                log.scroll_end(animate=False)
+            except Exception:  # the chat pane changed under us; the answer is still saved below
+                pass
+
+        async def on_done(error: str | None) -> None:
+            self.chat_busy = False
+            if "stream" in shown:
+                await shown["stream"].stop()
+            answer = "".join(parts).strip()
+            if error or not answer:
+                message = f"Gemma couldn't answer ({error}). Is Ollama running?" if error else "Gemma gave no answer."
+                if self.is_current_page(page_id):
+                    waiting.update(Text(message, style="dim italic"))
+                return
+            self.chats.setdefault(page_id, []).append((question, answer))
+
+        self.analyst.ask(snapshot, history, question, on_text, on_done)
 
     def cancel_loading(self) -> None:
         self.pending_page_id = None

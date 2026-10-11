@@ -21,6 +21,10 @@ on this laptop."
 - Side panel: Risk HIGH, the password form sent to another site, the brand in the title, and the help link whose text says paypal.com but goes elsewhere.
 - Gemma: "Likely phishing", each reason citing evidence like `[U1, P2]`. "That's Gemma 4 running locally on a laptop CPU, no GPU and no cloud. It can raise the risk but never lower it."
 
+**2b. Ask about the page (20 s).** Press **ctrl+t** and ask "what does the form ask for, and where does it
+send it?". Paragraph numbers appear in the page; Gemma answers with the ¶ it used, and notes that the
+password goes to collect.test.
+
 **3. A letter you can't see (20 s).** Back (alt+←), click the Cyrillic one.
 - Confirm bar: "shown as pаypal.test, but really xn--pypal-4ve.test". "That's a Cyrillic letter. It looks identical."
 

@@ -91,3 +91,13 @@ def test_small_page_wrapper_is_not_removed_with_its_banner():
 def test_robot_check_is_recognised():
     assert render.is_robot_check(429, "Our systems have detected unusual traffic from your computer network.")
     assert not render.is_robot_check(200, "Our systems have detected unusual traffic")
+
+
+def test_long_article_with_a_noscript_notice_is_readable_without_javascript():
+    article = "".join(f"<p>Paragraph {n}: the council confirmed new tram times for the winter months, with more "
+                      f"services at weekends and later trams on the airport line.</p>" for n in range(15))
+    html = (f"<html><body><noscript>Please enable JavaScript to play this video.</noscript>"
+            f"<article><h1>Tram times</h1>{article}</article><script>player()</script></body></html>")
+    page = render.parse(html, "https://news.example/story")
+    assert not page.needs_javascript
+    assert any("parts of this page" in note for note in page.notes)

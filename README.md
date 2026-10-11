@@ -29,6 +29,10 @@ Built in a day for UoM Hacktoberfest 2026 (Best Use of Gemma 4 track).
   - **Every reason cites its evidence,** for example `[U1, P2]`.
   - **It can raise the risk, never lower it.** Page text reaches Gemma as untrusted data, Gemma can't act on anything, and the code findings stand whatever it says.
   - **When it runs:** automatically when something looks wrong, otherwise on **ctrl+g**.
+- **Ask Gemma about the page (ctrl+t).** For example "what does ¶3 say?" or "what does the form ask for, and where does it send it?".
+  - **Paragraph numbers:** while the chat is open, the reader numbers its paragraphs (¶1, ¶2, …), and Gemma gets exactly the same numbers.
+  - **Answers stream in** and cite the paragraphs they use. Gemma is a small model and can get details wrong, so check the ¶ it cites.
+  - **Speed:** the first question on a page takes about 20–40 s on a laptop CPU, because Gemma reads the page, starting as soon as the chat opens. Follow-ups take a few seconds.
 - **JavaScript mode (ctrl+r)** loads the page in a sandboxed headless Chromium, for pages that need scripts:
   - **Throwaway sessions:** every page gets a fresh one; downloads, service workers and permissions are blocked.
   - **Ad and tracker blocking** with uBlock Origin's default filter lists. The side panel shows each blocked request and the rule that blocked it.
@@ -81,7 +85,8 @@ the app rather than causing a crash.
 | Enter / Esc | In the confirm bar: open the link / don't |
 | alt+← / alt+→ (or b / f) | Back / forward through pages you've already loaded (nothing is fetched again) |
 | ctrl+r | JavaScript mode on/off (reloads the page) |
-| ctrl+g | Ask Gemma about this page |
+| ctrl+t | Ask Gemma questions about this page (Esc closes the chat) |
+| ctrl+g | Gemma's phishing verdict for this page |
 | ctrl+o | Open the page in your normal browser, after a confirm bar listing its findings (e.g. to download something: linkinspector itself never downloads files) |
 | ctrl+v | Paste into the address bar |
 | ctrl+c | Copy selected text, or the page address if nothing is selected |

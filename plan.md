@@ -292,6 +292,15 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
   - The choice is remembered in `~/.config/linkinspector/settings.json`, and `--design` picks one for a single run.
   - A contrast test (WCAG AA, 4.5:1) caught Windows XP's green and Windows 95's red, amber and green on the grey panel, all darkened to pass.
 - **Downloads and "open in your browser" (ctrl+o).** linkinspector never downloads files: in JavaScript mode a download link is refused, and in static mode non-HTML isn't shown. Claude's own download page was a real example of a Download button that "didn't work". **ctrl+o** hands the current page to your normal browser (`xdg-open`/`open`, with its output silenced so the terminal UI isn't garbled), after a confirm bar listing the page's findings and warning that the browser runs scripts, keeps cookies and allows downloads. Only `http`/`https` addresses are passed, and refusals now point to ctrl+o.
+- **Chat (ctrl+t).** A pane under the page. While it's open the reader numbers paragraphs (¶1, ¶2…) and Gemma gets the same numbers (`render.numbered_blocks`), so "what does paragraph 3 say?" is unambiguous.
+  - **Answers stream** with `Markdown.get_stream`. Each page keeps its own conversation, and the queue runs the security verdict first.
+  - **Measured:** Ollama re-reads the whole prompt unless it starts identically, and reloads the model (about 15 s) whenever `num_ctx` changes. So the page goes in the system message, every request uses `num_ctx` 8192, and Gemma starts reading the page as soon as the chat opens (a one-token "prime" request).
+  - **Live on a BBC article:** first answer 24–39 s, follow-ups about 6 s; on a demo page 2–8 s.
+  - **Found and fixed:**
+    - a finished page load stole keyboard focus from the chat input, so typed letters hit the r/b/f shortcuts
+    - Gemma cited paragraphs as "P3" (clashing with finding IDs) after a prompt tweak; findings are now described separately
+    - BBC articles were wrongly flagged as "needs JavaScript" because of a video `<noscript>`
+  - **Small-model caveat:** Gemma can get details wrong (once it mislabelled who a spokesman worked for), which is why answers cite ¶ numbers.
 - **Markdown auto-linking is off.** Text that merely looks like a domain stays text; only links the page itself made can be clicked.
 - **Security checks still see the full page:** links and forms come from the original HTML.
 - **Coverage note** when banners were removed, and a **consent-wall note** when the page is mostly a consent notice or the host starts with `consent.`. linkinspector never accepts cookies, so it will always land on these.
@@ -354,7 +363,7 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 
 ### 6. Extras (in order, only with time left)
 - [ ] Screenshot brand check
-- [ ] Chat about the current page (streaming)
+- [x] Chat about the current page (streaming): **ctrl+t**, paragraph numbers shared by the reader and Gemma
 - [ ] Gemini API switch
 - [ ] ElevenLabs read-aloud
 - [ ] Spoken warning when a page is flagged
