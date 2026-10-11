@@ -217,11 +217,115 @@ def parse_forms(html: str, url: str) -> tuple[Form, ...]:
     return _forms(doc, url, _base_url(doc, url))
 
 
-def _fallback_text(doc) -> str:
-    for element in doc.iter("script", "style", "noscript", "template"):
-        element.drop_tree()
-    lines = (" ".join(line.split()) for line in doc.text_content().splitlines())
-    return "\n\n".join(line for line in lines if line)
+# Our own HTML → Markdown for pages that aren't articles (sign-in pages, web apps), keeping the layout:
+# one line per block, real links only, and form controls shown so you can see what a page asks for.
+HIDDEN_MARK = "data-linkinspector-hidden"  # set by JavaScript mode on elements hidden by CSS
+_BLOCK_TAGS = {"address", "article", "aside", "blockquote", "dd", "details", "dialog", "div", "dl", "dt",
+               "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header",
+               "hr", "legend", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tr", "ul"}
+_SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head", "iframe", "object", "embed", "canvas",
+              "video", "audio", "map", "img", "picture"}
+_PREFIXES = {"h1": "# ", "h2": "## ", "h3": "### ", "h4": "#### ", "h5": "##### ", "h6": "###### ", "li": "- "}
+_MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]<>#|~])")
+
+
+def _escape(text: str) -> str:
+    """Page text never becomes Markdown syntax: no fake links, headings or emphasis."""
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
+
+
+def _is_hidden(element) -> bool:
+    style = (element.get("style") or "").replace(" ", "").lower()
+    return (element.get(HIDDEN_MARK) is not None or element.get("hidden") is not None
+            or element.get("aria-hidden") == "true" or "display:none" in style or "visibility:hidden" in style
+            or (element.tag == "input" and (element.get("type") or "").lower() == "hidden"))
+
+
+def _control_label(text: str) -> str:
+    return " ".join(safe_text(text).replace("`", "'").split())[:40]
+
+
+def _control(element) -> str | None:
+    """A form control as inline code, e.g. `[ Email: ______ ]` or `[ Continue ]`."""
+    tag = element.tag
+    if tag == "button":
+        return f"`[ {_control_label(element.text_content() or element.get('aria-label') or 'Button')} ]`"
+    if tag == "select":
+        return f"`[ {_control_label(element.get('aria-label') or element.get('name') or 'choose')} ▾ ]`"
+    if tag == "textarea":
+        return f"`[ {_control_label(element.get('placeholder') or element.get('aria-label') or '')} …… ]`"
+    if tag != "input":
+        return None
+    kind = (element.get("type") or "text").lower()
+    if kind in ("submit", "button", "reset", "image"):
+        return f"`[ {_control_label(element.get('value') or element.get('aria-label') or 'Submit')} ]`"
+    if kind in ("checkbox", "radio"):
+        return "`[ ]`"
+    label = _control_label(element.get("placeholder") or element.get("aria-label") or "")
+    blank = "••••••" if kind == "password" else "______"
+    return f"`[ {label + ': ' if label else ''}{blank} ]`"
+
+
+def structured_markdown(root, base: str) -> str:
+    blocks: list[str] = []
+    pieces: list[str] = []
+    pending_prefix = [""]  # the prefix of the block being filled, used once
+
+    def flush() -> None:
+        line = re.sub(r" ([,.;:!?)])", r"\1", " ".join(" ".join(pieces).split()))  # no space before punctuation
+        pieces.clear()
+        if line and not re.fullmatch(r"(\\?[|·•/~*-]|–|—)+", line.replace(" ", "")):  # skip separator-only lines
+            prefix, pending_prefix[0] = pending_prefix[0], ""
+            if not prefix and re.match(r"[-+]\s|\d+[.)]\s", line):
+                line = "\\" + line  # page text that would read as a list item
+            blocks.append(prefix + line)
+
+    def walk(element) -> None:
+        tag = element.tag if isinstance(element.tag, str) else ""
+        if tag and tag not in _SKIP_TAGS and not _is_hidden(element):
+            if tag in _BLOCK_TAGS:
+                flush()
+                pending_prefix[0] = _PREFIXES.get(tag, "")
+            control = _control(element)
+            if control is not None:
+                pieces.append(control)
+            elif tag == "a" and (href := (element.get("href") or "").strip()):
+                label = _escape(" ".join(element.text_content().split()))
+                url = unwrap_redirect(urljoin(base, href))
+                if label and urlsplit(url).scheme in ("http", "https") and not re.search(r"[\s<>]", url):
+                    pieces.append(f"[{label}](<{url}>)")
+                elif label:
+                    pieces.append(label)
+            elif tag == "br":
+                flush()
+            else:
+                if element.text:
+                    pieces.append(_escape(element.text))
+                for child in element:
+                    walk(child)
+            if tag in _BLOCK_TAGS:
+                flush()
+        if element.tail:
+            pieces.append(_escape(element.tail))
+
+    walk(root)
+    flush()
+    return "\n\n".join(blocks)
+
+
+def _password_forms(readable, base: str) -> str:
+    """Forms that ask for a password, shown under an article, which the text extractor leaves out."""
+    forms = [form for form in readable.iter("form") if not _is_hidden(form) and any(
+        (field.get("type") or "").lower() == "password" for field in form.iter("input"))]
+    if not forms:
+        return ""
+    return "\n\n---\n\n**Forms on this page**\n\n" + "\n\n".join(structured_markdown(form, base) for form in forms)
+
+
+def plain_text(markdown: str) -> str:
+    """Markdown without link targets or control brackets, e.g. for measuring how much a page says."""
+    text = re.sub(r"\[([^\]]*)\]\(<?[^)>]*>?\)", r"\1", markdown)
+    return re.sub(r"`\[[^`]*\]`", " ", text)
 
 
 def parse(html: str, url: str, scripts_ran: bool = False) -> Page:
@@ -244,21 +348,26 @@ def parse(html: str, url: str, scripts_ran: bool = False) -> Page:
     js_notices = [noscript for noscript in readable.iter("noscript") if _tells_to_enable_javascript(noscript)]
     for noscript in js_notices:
         noscript.drop_tree()
-    markdown = None
-    if urlsplit(url).hostname == "html.duckduckgo.com":
-        markdown = _duckduckgo_results(readable, base)
-    markdown = markdown or trafilatura.extract(
-        lxml.html.tostring(readable, encoding="unicode"), url=url, output_format="markdown",
-        include_links=True, include_formatting=True, include_tables=True, include_images=False,
-        favor_recall=True, with_metadata=False,
-    )
-    if not markdown:
-        markdown = _fallback_text(readable)
-        notes.append("no main article found; showing all page text")
-    if (cookie_choices and len(markdown) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
+    body = readable.find(".//body")
+    structured = structured_markdown(body if body is not None else readable, base)
+    if urlsplit(url).hostname == "html.duckduckgo.com" and (results := _duckduckgo_results(readable, base)):
+        markdown = results
+    else:
+        article = trafilatura.extract(
+            lxml.html.tostring(readable, encoding="unicode"), url=url, output_format="markdown",
+            include_links=True, include_formatting=True, include_tables=True, include_images=False,
+            favor_recall=True, with_metadata=False,
+        ) or ""
+        # The text extractor is built for articles; it drops sign-in pages and web apps, or keeps
+        # the wrong part of them. Use it only when it found a real article.
+        if len(article) >= 500 and len(article) >= len(plain_text(structured)) / 4:
+            markdown = article + _password_forms(readable, base)
+        else:
+            markdown = structured
+    if (cookie_choices and len(plain_text(markdown)) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
         notes.append(CONSENT_WALL_NOTE)
     needs_javascript = not scripts_ran and (
-        bool(js_notices) or (len(markdown) < 300 and doc.find(".//script") is not None))
+        bool(js_notices) or (len(plain_text(markdown)) < 300 and doc.find(".//script") is not None))
     if needs_javascript:
         notes.append("this page needs JavaScript to show its content, which static mode doesn't run")
     return Page(

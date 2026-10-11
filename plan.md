@@ -320,6 +320,13 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - **Google Search answers headless Chromium with a robot check (HTTP 429, CAPTCHA).** linkinspector doesn't try to get around it; it says so in the coverage notes. Searching from the address bar uses DuckDuckGo instead.
 - **DuckDuckGo's no-JavaScript results page refuses headless Chromium** (HTTP 403, "If this persists, please email us") but serves static mode normally. So searches from the address bar are **always fetched in static mode**, even with JavaScript mode on (with a coverage note); results you open still use JavaScript mode.
 - **Sites that refuse the headless browser:** a 401/403/429 with almost no content in JavaScript mode gets a coverage note suggesting static mode. linkinspector doesn't try to disguise itself further.
+- **Reader layout for pages that aren't articles.** The text extractor is built for articles: it ran sign-in pages into one paragraph (AWS Builder ID) or kept a hidden alert instead of the form (GitHub). Our own renderer (`render.structured_markdown`) now handles these:
+  - one line per block, with headings and list items
+  - real links only; page text is escaped, so it can never become a fake link
+  - form controls shown, like `[ Email: ______ ]`, `[ •••••• ]` and `[ Continue ]`
+  - elements hidden by CSS skipped, which JavaScript mode marks before capture
+
+  The extractor is still used when it finds a real article (500+ characters and at least a quarter of the page's text), with any password forms listed under it.
 - **EasyList Cookie Notices** comes from uBlock Origin's up-to-date mirror (`ublockorigin.github.io/uAssets/thirdparties/easylist-cookies.txt`); the old fanboy host doesn't resolve and the adblockplus copy dates from March 2024.
 
 ### 6. Extras (in order, only with time left)

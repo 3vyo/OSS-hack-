@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 import httpx
 import ollama
 
+import render
 from render import safe_text
 from snapshot import Snapshot
 
@@ -106,7 +107,7 @@ def evidence_packet(snapshot: Snapshot) -> tuple[str, bool]:
         lines.append(f"Form: {form.method} to {form.action}; fields: {fields}")
     lines.append("Findings:")
     lines += [f"[{f.id}] ({f.severity}) {f.observation}" for f in snapshot.findings] or ["(none)"]
-    text = snapshot.markdown
+    text = render.plain_text(snapshot.markdown)  # link targets would only use up the budget
     truncated = len(text) > PAGE_TEXT_BUDGET
     lines += ["<page>", text[:PAGE_TEXT_BUDGET], "</page>"]
     return "\n".join(lines), truncated

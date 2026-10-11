@@ -110,6 +110,11 @@ def _host(url: str) -> str:
     return urlsplit(url).hostname or ""
 
 
+def _shorten(url: str, limit: int = 90) -> str:
+    """Long sign-in redirects carry huge tokens; the side panel only needs where they went."""
+    return url if len(url) <= limit else url[:limit - 1] + "…"
+
+
 def append_findings(text: Text, findings: tuple[Finding, ...] | list[Finding], explain: bool = True) -> None:
     for finding in sorted(findings, key=lambda f: (SEVERITY_ORDER[f.severity], f.id)):
         colour = SEVERITY_COLOUR[finding.severity]
@@ -227,8 +232,9 @@ def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: b
     shown, real = url_checks.host_forms(_host(snapshot.final_url))
     row("Address", snapshot.final_url + (f"\n(really {real})" if shown != real else ""))
     if snapshot.redirects:
-        hops = [f"{'JS' if r.kind == 'javascript' else r.status or '→'} {r.url}" for r in snapshot.redirects]
-        row(f"Redirects ({len(snapshot.redirects)})", "\n".join(hops + [f"→ {snapshot.final_url}"]), "yellow")
+        hops = [f"{'JS' if r.kind == 'javascript' else r.status or '→'} {_shorten(r.url)}" for r in snapshot.redirects]
+        row(f"Redirects ({len(snapshot.redirects)})", "\n".join(hops + [f"→ {_shorten(snapshot.final_url)}"]),
+            "yellow")
     if snapshot.requests:
         row("Requests", request_summary(snapshot))
     if filtering:

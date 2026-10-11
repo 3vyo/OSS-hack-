@@ -48,7 +48,7 @@ class PolicyProxy:
         self.events: list[ProxyEvent] = []
         self.port: int | None = None
         self._server: asyncio.Server | None = None
-        self._writers: set[asyncio.StreamWriter] = set()
+        self._tasks: set[asyncio.Task] = set()
 
     @property
     def url(self) -> str:
@@ -62,8 +62,10 @@ class PolicyProxy:
         if self._server is None:
             return
         self._server.close()
-        for writer in list(self._writers):  # Python 3.12's wait_closed waits for open connections
-            writer.close()
+        # Open tunnels would otherwise keep running (and Python 3.12's wait_closed waits for them).
+        for task in list(self._tasks):
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
         await self._server.wait_closed()
         self._server = None
 
@@ -100,7 +102,8 @@ class PolicyProxy:
         return reason
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        self._writers.add(writer)
+        task = asyncio.current_task()
+        self._tasks.add(task)
         upstream_writer = None
         try:
             try:
@@ -141,7 +144,7 @@ class PolicyProxy:
             for stream in (upstream_writer, writer):
                 if stream is not None:
                     stream.close()
-            self._writers.discard(writer)
+            self._tasks.discard(task)
 
 
 def _forbidden(reason: str) -> bytes:

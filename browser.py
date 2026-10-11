@@ -151,6 +151,15 @@ async def _settle(page: Page, documents: list[Response]) -> bool:
     return False
 
 
+# Marks elements the browser isn't showing, so the reader can skip them (render.HIDDEN_MARK).
+_MARK_HIDDEN = """() => {
+  for (const element of document.querySelectorAll("body *")) {
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden") element.setAttribute("%s", "");
+  }
+}""" % render.HIDDEN_MARK
+
+
 async def _content(page: Page) -> str | None:
     for _ in range(3):
         try:
@@ -296,6 +305,10 @@ class Browser:
             if refused := current.headers.get(REFUSED_HEADER):
                 records.append(RequestRecord(current.url, "document", "refused", refused))
                 return self._failure(page_id, url, refused, records, since, redirects, current.url)
+            try:
+                await page.evaluate(_MARK_HIDDEN)
+            except PlaywrightError:
+                pass  # navigating; hidden elements just won't be skipped
             if (dom_html := await _content(page)) is None:
                 return self._failure(page_id, url, "the page kept navigating, so it couldn't be captured",
                                      records, since, redirects)
