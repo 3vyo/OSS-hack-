@@ -5,7 +5,7 @@
 - [ ] Run `.venv/bin/python app.py --update-filters` while you still have internet.
 - [ ] Check every beat below still works: `.venv/bin/python scripts/rehearse_demo.py` (about 1 minute; add `ai-off` to rehearse without Gemma).
 - [ ] Start the app about a minute early: `.venv/bin/python app.py https://home.test/`. It loads Gemma in the background, which takes about 15 s the first time.
-- [ ] Open the PayPal page once and wait for Gemma's answer, then go back. Answers are kept per page, so you can return to it on stage without waiting.
+- [ ] Open the PayPal page once and wait for Gemma's answer. That loads the model, so answers on stage take about 20 s instead of 35 s. Opening a link again asks Gemma again; pages already in your history keep their answer, and alt+← / alt+→ brings them back instantly.
 - [ ] Use a large terminal font, and close everything else (Gemma needs about 4 GB of RAM).
 - [ ] Decide when you'll turn WiFi off (step 6).
 
@@ -43,7 +43,7 @@ a redirect to 127.0.0.1 is refused at the network level. And it's all open sourc
 
 ## If something goes wrong
 
-- **Gemma is slow:** keep talking through the findings; they appear instantly. Or go back to the page you warmed up earlier.
+- **Gemma is slow:** keep talking through the findings; they appear instantly. Or press alt+← to return to a page whose answer you already have.
 - **Gemma isn't running:** the app says so and every code finding still works. Run `ollama serve` in another terminal and press ctrl+g.
 - **Chromium fails:** press ctrl+r to go back to static mode and skip step 5.
 - **Typing is awkward:** paste links with ctrl+v; ctrl+l jumps to the address bar.
