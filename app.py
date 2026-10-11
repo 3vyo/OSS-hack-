@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import dataclasses
 from urllib.parse import quote_plus, unquote, urldefrag, urljoin, urlsplit
 
 from markdown_it import MarkdownIt
@@ -28,6 +29,9 @@ from snapshot import Finding, Snapshot
 HOME_URL = "https://home.test/"
 # DuckDuckGo's results page works without JavaScript; Google's doesn't.
 SEARCH_URL = "https://html.duckduckgo.com/html/?q={}"
+SEARCH_HOST = urlsplit(SEARCH_URL).hostname
+SEARCH_NOTE = ("search results are always fetched without JavaScript: DuckDuckGo's no-JavaScript results page "
+               "refuses headless browsers. Results you open still use JavaScript mode")
 WELCOME = f"""\
 # linkinspector
 
@@ -459,8 +463,9 @@ class LinkInspector(App):
     def navigate(self, url: str) -> None:
         self.next_page_id += 1
         self.pending_page_id = self.next_page_id
-        self.set_status(f"Loading {url} " + ("with JavaScript …" if self.javascript else "…"))
-        self.load(url, self.next_page_id, self.javascript)
+        javascript = self.javascript and _host(url) != SEARCH_HOST
+        self.set_status(f"Loading {url} " + ("with JavaScript …" if javascript else "…"))
+        self.load(url, self.next_page_id, javascript)
 
     @work(exclusive=True, group="navigation")
     async def load(self, url: str, page_id: int, javascript: bool) -> None:
@@ -471,6 +476,8 @@ class LinkInspector(App):
             snapshot = await fetch_static.fetch(url, page_id)
             if self.filters is not None:
                 snapshot = self.filters.label_references(snapshot)
+            if self.javascript and _host(url) == SEARCH_HOST:
+                snapshot = dataclasses.replace(snapshot, coverage=snapshot.coverage + (SEARCH_NOTE,))
         snapshot = page_checks.analyse(snapshot)
         if page_id != self.pending_page_id:
             return  # the user has moved on; never show a stale page

@@ -26,6 +26,8 @@ LAUNCH_ARGS = [
     "--disable-quic",  # QUIC is UDP and would skip the proxy
     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",  # no WebRTC UDP outside the proxy
 ]
+REFUSED_BROWSER_NOTE = ("the site answered HTTP {status} with almost no content: it may refuse automated "
+                        "browsers, which linkinspector doesn't try to get around. Static mode (ctrl+r) sometimes works")
 JAVASCRIPT_NOTE = ("JavaScript mode: the page's scripts ran in a headless Chromium; requests were filtered "
                    "and every connection went through the network rules")
 
@@ -315,6 +317,8 @@ class Browser:
                 coverage.append(f"closed {len(popups)} popup window{'s' * (len(popups) > 1)} the page opened")
             if render.is_robot_check(current.status, page_data.markdown):
                 coverage.append(render.ROBOT_CHECK_NOTE)
+            elif current.status in (401, 403, 429) and len(page_data.markdown) < 400:
+                coverage.append(REFUSED_BROWSER_NOTE.format(status=current.status))
             return Snapshot(
                 page_id=page_id, mode="chromium", requested_url=url, final_url=final_url, status=current.status,
                 content_type=(current.headers.get("content-type") or "").split(";")[0].strip().lower(),

@@ -200,3 +200,45 @@ def test_downloads_are_never_allowed(monkeypatch):
     monkeypatch.setattr(policy, "fixture_for", fixture_for)
     snapshot = inspect("https://files.test/invoice.zip")
     assert snapshot.error == "this link starts a file download, which linkinspector never allows"
+
+
+def test_site_refusing_the_headless_browser_is_explained(monkeypatch):
+    real_fixture_for = policy.fixture_for
+
+    def fixture_for(url):
+        if url.startswith("https://refuses.test/"):
+            return policy.Fixture(403, {"content-type": "text/html"}, b"If this persists, please email us.")
+        return real_fixture_for(url)
+    monkeypatch.setattr(policy, "fixture_for", fixture_for)
+    snapshot = inspect("https://refuses.test/")
+    assert snapshot.status == 403
+    assert any("may refuse automated browsers" in note for note in snapshot.coverage)
+
+
+def test_searches_use_static_mode_even_with_javascript_on(monkeypatch):
+    import app as app_module
+    from snapshot import Snapshot
+
+    fetched = []
+
+    async def fake_fetch(url, page_id):
+        fetched.append(url)
+        return Snapshot(page_id=page_id, mode="static", requested_url=url, final_url=url, status=200,
+                        markdown="**[Result](<https://example.org/>)**")
+
+    async def main():
+        app = LinkInspector(ai_host="http://127.0.0.1:9")
+        async with app.run_test() as pilot:
+            await app.filters_ready.wait()
+            monkeypatch.setattr(app_module.fetch_static, "fetch", fake_fetch)
+
+            async def no_browser(*args):
+                raise AssertionError("searches must not use the headless browser")
+            monkeypatch.setattr(app.browser, "inspect", no_browser)
+            app.javascript = True
+            await pilot.click("#url")
+            await pilot.press(*"manchester trams", "enter")
+            await _wait_for_navigation(app, pilot)
+            assert fetched == ["https://html.duckduckgo.com/html/?q=manchester+trams"]
+            assert app.current.mode == "static" and app_module.SEARCH_NOTE in app.current.coverage
+    asyncio.run(main())
