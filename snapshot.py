@@ -9,6 +9,7 @@ class Redirect:
     url: str
     status: int | None  # None for a JavaScript redirect
     kind: str = "http"  # "http" or "javascript"
+    location: str = ""  # where this step pointed next
 
 
 @dataclass(frozen=True)

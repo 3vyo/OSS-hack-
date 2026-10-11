@@ -10,6 +10,6 @@
   <input name="password" type="password" placeholder="Password">
   <button>Log in</button>
 </form>
-<p><a href="https://www.paypal.com/uk/webapps/mpp/ua/privacy-full">Privacy</a> · <a href="https://collect.test/help">Help</a></p>
+<p><a href="https://www.paypal.com/uk/webapps/mpp/ua/privacy-full">Privacy</a> · Need help? Visit <a href="https://collect.test/help">www.paypal.com/help</a></p>
 </body>
 </html>

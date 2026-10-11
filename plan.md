@@ -233,15 +233,22 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - **Run it:** `.venv/bin/python app.py https://home.test/`. Tests: `.venv/bin/python -m pytest -q`.
 
 ### 3. Safety rules and checks
-- [ ] `policy.py`: `http`/`https` only, private IP block, redirect checks (max 5), connected to the static fetch
-- [ ] Brand list (about 20 brands → official domains)
-- [ ] `url_checks.py`: `tldextract` (built-in list copy, private suffixes), punycode and lookalike characters, `rapidfuzz` distance, brand names in subdomains, bare IP hosts
-- [ ] `page_checks.py`: password forms, forms sending data to another site (single sign-on noted), passwords over plain HTTP, links whose text lies about their destination
-- [ ] Every finding has an evidence ID, what was seen, and why it matters
-- [ ] Findings panel in the UI
-- [ ] Confirm bar before fetching (real destination plus URL warnings)
-- [ ] `pytest` tests for the checks pass
-- [ ] Committed
+- [x] `policy.py`: `http`/`https` only, private IP block, redirect checks (max 5), connected to the static fetch
+- [x] Brand list (25 brands → official domains, plus the made-up Northbank for the demo)
+- [x] `url_checks.py`: `tldextract` (built-in list copy, private suffixes), punycode and lookalike characters, `rapidfuzz` distance, brand names in subdomains, bare IP hosts (plus `user@host` links)
+- [x] `page_checks.py`: password forms, forms sending data to another site (single sign-on noted), passwords over plain HTTP, links whose text lies about their destination (plus a brand named in the title of a password page)
+- [x] Every finding has an evidence ID, what was seen, and why it matters
+- [x] Findings panel in the UI
+- [x] Confirm bar before fetching (real destination plus URL warnings)
+- [x] `pytest` tests for the checks pass (38 tests in total)
+- [x] Committed
+
+#### Phase 3 notes
+- **When the confirm bar appears:** for typed or pasted links, only when the URL checks find a warning or danger. For clicked links, also whenever the link leaves the current site, so you always see the real destination first.
+- **Brand matching avoids obvious false positives.** Substring and fuzzy (edit-distance) matches only apply to brand names of 6+ letters, so `pineapple.com` and `apply.com` aren't flagged as Apple. Short names still match through character swaps (`app1e`).
+- **Network rules in static mode:** only ports 80/443; hosts are resolved and refused if any address is private, loopback, link-local, reserved or multicast (IPv4-mapped IPv6 included). A blocked redirect shows the address where it stopped.
+- **Known gap:** httpx resolves the name again when it connects (DNS rebinding), as listed under Limitations.
+- **The text extractor sometimes drops a page's main heading.** The title is shown separately, so nothing important is lost.
 
 ### 4. Gemma (finishes the minimum project)
 - [ ] `llm.py`: one-at-a-time queue, evidence packet, JSON schema, evidence ID check, page ID
@@ -297,18 +304,18 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 Tick when the demo page exists **and** the app behaves as expected on it.
 
 - [ ] A normal article, and a JavaScript-populated article
-- [ ] Normal single sign-on (should not be flagged as phishing)
-- [ ] `paypa1` and Cyrillic lookalike domains
-- [ ] A misleading subdomain (`paypal.com.account-verify.example`)
-- [ ] A link whose text lies about its destination
+- [x] Normal single sign-on (should not be flagged as phishing): `intranet.test`, one info finding only
+- [x] `paypa1` and Cyrillic lookalike domains: `paypa1-secure.test`, `pаypal.test` (`xn--pypal-4ve.test`)
+- [x] A misleading subdomain (`paypal.com.account-verify.test`)
+- [x] A link whose text lies about its destination (on `paypa1-secure.test`)
 - [ ] A login form added by JavaScript
 - [ ] A page that navigates itself during capture (comparison marked unavailable, JavaScript redirect recorded)
 - [ ] Hidden instructions aimed at the AI: code findings remain and the AI can't act. This doesn't prove the app resists every injection.
 - [ ] A page that requests a demo tracker, run with blocking on and off
 - [ ] Filter lists missing: "filtering unavailable" shown
 - [x] A redirect chain (`short.test` → `hop.test` → `news.test`)
-- [ ] A redirect to a loopback address (Chromium mode: dummy listener sees zero connections)
-- [ ] Links to local network addresses
+- [ ] A redirect to a loopback address (Chromium mode: dummy listener sees zero connections) — static mode done: `bounce.test/local` is stopped at `127.0.0.1`
+- [ ] Links to local network addresses — static mode done (`bounce.test/router`, `localhost`, `2130706433`, `[::ffff:127.0.0.1]`); Chromium mode still to test
 - [ ] A popup aimed at a forbidden address
 - [ ] Download attempts
 - [ ] Slow loads, slow model, Ollama off

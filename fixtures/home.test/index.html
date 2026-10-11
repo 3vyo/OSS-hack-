@@ -4,11 +4,20 @@
 <body>
 <h1>linkinspector demo pages</h1>
 <p>Every page below is a local file served for a <code>.test</code> address. Nothing here touches the network.</p>
+<h2>Ordinary pages</h2>
 <ul>
   <li><a href="https://news.test/">A local news article</a> (loads a tracker, and adds a login form with JavaScript)</li>
   <li><a href="https://northbank.test/">Northbank sign-in</a> (a made-up bank's real sign-in page)</li>
-  <li><a href="https://paypa1-secure.test/login">PayPal account check</a> (a lookalike domain)</li>
+  <li><a href="https://intranet.test/">Staff intranet</a> (normal single sign-on through Microsoft)</li>
   <li><a href="https://short.test/abc">A short link</a> (redirects twice before landing)</li>
+</ul>
+<h2>Phishing tricks</h2>
+<ul>
+  <li><a href="https://paypa1-secure.test/login">PayPal account check</a> (a lookalike domain)</li>
+  <li><a href="https://paypal.com.account-verify.test/">Verify your PayPal account</a> (a misleading subdomain)</li>
+  <li><a href="https://pаypal.test/">paypal.test</a> (a Cyrillic letter in the name)</li>
+  <li><a href="https://bounce.test/local">A link that redirects to this computer</a></li>
+  <li><a href="https://bounce.test/router">A link that redirects to a home router</a></li>
 </ul>
 </body>
 </html>

@@ -1,6 +1,7 @@
 """httpx static fetch."""
 
 import asyncio
+import dataclasses
 from urllib.parse import urljoin
 
 import httpx
@@ -62,21 +63,26 @@ def _build(page_id: int, url: str, response: httpx.Response, body: bytes, trunca
 
 
 async def _fetch(url: str, page_id: int, redirects: list[Redirect]) -> Snapshot:
-    current = url
     async with httpx.AsyncClient(
         follow_redirects=False, timeout=10, headers={"user-agent": USER_AGENT},
         mounts={"all://*.test": _fixture_transport()},
     ) as client:  # a new client per inspection, so no cookies outlive it
         for _ in range(policy.MAX_REDIRECTS + 1):
+            current = _next_url(url, redirects)
             policy.check_url(current)
+            await policy.check_destination(current)
             async with client.stream("GET", current) as response:
                 if response.is_redirect:
-                    redirects.append(Redirect(current, response.status_code))
-                    current = urljoin(current, response.headers["location"])
+                    redirects.append(Redirect(current, response.status_code,
+                                              location=urljoin(current, response.headers["location"])))
                     continue
                 body, truncated = await _read_limited(response)
                 return _build(page_id, url, response, body, truncated, redirects)
     raise policy.PolicyError(f"stopped after {policy.MAX_REDIRECTS} redirects")
+
+
+def _next_url(url: str, redirects: list[Redirect]) -> str:
+    return redirects[-1].location if redirects else url
 
 
 async def fetch(url: str, page_id: int) -> Snapshot:
@@ -90,4 +96,6 @@ async def fetch(url: str, page_id: int) -> Snapshot:
         error = str(exc)
     except httpx.HTTPError as exc:
         error = f"could not load the page ({type(exc).__name__}: {exc})"
-    return Snapshot.failed(page_id, "static", url, render.safe_text(error), tuple(redirects))
+    snapshot = Snapshot.failed(page_id, "static", url, render.safe_text(error), tuple(redirects))
+    # Show where the inspection stopped, e.g. the private address a redirect pointed at.
+    return dataclasses.replace(snapshot, final_url=_next_url(url, redirects))
