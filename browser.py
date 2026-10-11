@@ -263,7 +263,8 @@ class Browser:
             if final_url is None and last.resource_type == "document":
                 final_url = last.url  # show where the inspection stopped
         elif "Download is starting" in message:
-            message = "this link starts a file download, which linkinspector never allows"
+            message = ("this link starts a file download, which linkinspector never allows. If you trust it, "
+                       "press ctrl+o to open it in your normal browser")
         else:
             message = f"Chromium could not load the page ({message.splitlines()[0]})"
         snapshot = Snapshot.failed(page_id, "chromium", url, render.safe_text(message), tuple(redirects))

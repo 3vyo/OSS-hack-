@@ -51,7 +51,8 @@ def _build(page_id: int, url: str, response: httpx.Response, body: bytes, trunca
     if content_type not in HTML_TYPES:
         return Snapshot(page_id=page_id, mode="static", requested_url=url, final_url=final_url,
                         status=response.status_code, content_type=content_type, redirects=tuple(redirects),
-                        markdown=f"*This is not a web page ({content_type}), so it is not shown.*",
+                        markdown=f"*This is not a web page ({content_type}), so it is not shown or downloaded. "
+                                 f"If you trust it, press ctrl+o to open it in your normal browser.*",
                         coverage=tuple(coverage + [f"not an HTML page ({content_type})"]))
     page = render.parse(html, final_url)
     if render.is_robot_check(response.status_code, page.markdown):

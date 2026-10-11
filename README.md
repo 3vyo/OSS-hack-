@@ -82,6 +82,7 @@ the app rather than causing a crash.
 | alt+← / alt+→ (or b / f) | Back / forward through pages you've already loaded (nothing is fetched again) |
 | ctrl+r | JavaScript mode on/off (reloads the page) |
 | ctrl+g | Ask Gemma about this page |
+| ctrl+o | Open the page in your normal browser, after a confirm bar listing its findings (e.g. to download something: linkinspector itself never downloads files) |
 | ctrl+v | Paste into the address bar |
 | ctrl+c | Copy selected text, or the page address if nothing is selected |
 | F2 | Next design (see below) |

@@ -85,3 +85,31 @@ def test_bare_domains_in_page_text_are_not_turned_into_links():
     tokens = app_module.markdown_parser().parse("Visit www.tfgm.com or [the map](https://tfgm.com/map).")
     kinds = [token.type for token in tokens[1].children]
     assert kinds.count("link_open") == 1
+
+
+def test_ctrl_o_asks_first_then_opens_the_page_in_the_normal_browser(monkeypatch):
+    opened = []
+    monkeypatch.setattr(app_module, "open_externally", lambda url: opened.append(url) or True)
+
+    async def scenario():
+        app = LinkInspector("https://news.test/", ai_host="http://127.0.0.1:9")
+        async with app.run_test() as pilot:
+            for _ in range(40):
+                await pilot.pause(0.05)
+                if app.current:
+                    break
+            app.action_focus_page()
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            confirm = app.query_one(app_module.ConfirmBar)
+            assert confirm.display and "normal browser" in str(confirm.render())
+            assert opened == []  # nothing happens until confirmed
+            await pilot.press("enter")
+            await pilot.pause()
+            assert opened == ["https://news.test/"] and len(app.history) == 1
+    asyncio.run(scenario())
+
+
+def test_only_web_addresses_are_handed_to_the_browser():
+    assert not app_module.open_externally("file:///etc/passwd")
+    assert not app_module.open_externally("javascript:alert(1)")

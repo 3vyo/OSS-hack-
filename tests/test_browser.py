@@ -199,7 +199,8 @@ def test_downloads_are_never_allowed(monkeypatch):
         return real_fixture_for(url)
     monkeypatch.setattr(policy, "fixture_for", fixture_for)
     snapshot = inspect("https://files.test/invoice.zip")
-    assert snapshot.error == "this link starts a file download, which linkinspector never allows"
+    assert snapshot.error.startswith("this link starts a file download, which linkinspector never allows")
+    assert "ctrl+o" in snapshot.error
 
 
 def test_site_refusing_the_headless_browser_is_explained(monkeypatch):

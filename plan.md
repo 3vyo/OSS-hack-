@@ -291,6 +291,7 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
   - Finding, verdict and badge colours come from the active design; any other Textual theme gets colours from its own palette.
   - The choice is remembered in `~/.config/linkinspector/settings.json`, and `--design` picks one for a single run.
   - A contrast test (WCAG AA, 4.5:1) caught Windows XP's green and Windows 95's red, amber and green on the grey panel, all darkened to pass.
+- **Downloads and "open in your browser" (ctrl+o).** linkinspector never downloads files: in JavaScript mode a download link is refused, and in static mode non-HTML isn't shown. Claude's own download page was a real example of a Download button that "didn't work". **ctrl+o** hands the current page to your normal browser (`xdg-open`/`open`, with its output silenced so the terminal UI isn't garbled), after a confirm bar listing the page's findings and warning that the browser runs scripts, keeps cookies and allows downloads. Only `http`/`https` addresses are passed, and refusals now point to ctrl+o.
 - **Markdown auto-linking is off.** Text that merely looks like a domain stays text; only links the page itself made can be clicked.
 - **Security checks still see the full page:** links and forms come from the original HTML.
 - **Coverage note** when banners were removed, and a **consent-wall note** when the page is mostly a consent notice or the host starts with `consent.`. linkinspector never accepts cookies, so it will always land on these.
@@ -365,7 +366,7 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - [x] Rehearsed with AI on (`scripts/rehearse_demo.py`: 13/13 beats, Gemma 19–22 s per answer)
 - [x] Rehearsed with AI off (11/11 beats)
 - [ ] Rehearsed with WiFi off — automated run in a network namespace with no network at all passed 11/11 (Gemma unreachable there too); still do one real WiFi-off run with Gemma yourself
-- [ ] Pushed, and repo made public — repo is public; everything up to `33da955`-era work is pushed, the designs commit and later still to push
+- [ ] Pushed, and repo made public — the repo is public; the latest commits (designs onwards) still need pushing
 - [ ] Submitted
 
 ## Demo plan (Gemma 4 track)

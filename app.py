@@ -3,6 +3,9 @@
 import argparse
 import asyncio
 import dataclasses
+import subprocess
+import sys
+import webbrowser
 from urllib.parse import quote_plus, unquote, urldefrag, urljoin, urlsplit
 
 from markdown_it import MarkdownIt
@@ -58,6 +61,24 @@ NEEDS_JAVASCRIPT = """\
 ---
 
 """
+
+
+def open_externally(url: str) -> bool:
+    """Open an http(s) URL in the user's normal browser, quietly so the terminal UI isn't garbled."""
+    if urlsplit(url).scheme not in policy.ALLOWED_SCHEMES:
+        return False
+    if sys.platform == "darwin":
+        command = ["open", url]
+    elif sys.platform.startswith("win"):
+        return webbrowser.open(url)
+    else:
+        command = ["xdg-open", url]
+    try:
+        subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        return webbrowser.open(url)
+    return True
 
 
 def markdown_parser() -> MarkdownIt:
@@ -265,18 +286,20 @@ class ConfirmBar(Static, can_focus=True):
     ]
 
     class Decided(Message):
-        def __init__(self, url: str, confirmed: bool) -> None:
+        def __init__(self, url: str, confirmed: bool, external: bool) -> None:
             super().__init__()
             self.url = url
             self.confirmed = confirmed
+            self.external = external  # open in the user's normal browser, not in linkinspector
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.url = ""
         self.findings: list[Finding] = []
+        self.external = False
 
-    def ask(self, url: str, findings: list[Finding]) -> None:
-        self.url, self.findings = url, findings
+    def ask(self, url: str, findings: list[Finding], external: bool = False) -> None:
+        self.url, self.findings, self.external = url, findings, external
         self.redraw()
         self.display = True
         self.focus()
@@ -284,19 +307,22 @@ class ConfirmBar(Static, can_focus=True):
     def redraw(self) -> None:
         url, colours = self.url, self.app.colours
         text = Text()
-        text.append("Open this link?  ", style="bold")
+        text.append("Open this page in your normal browser?  " if self.external else "Open this link?  ", style="bold")
         text.append(safe_text(url), style="underline")
         shown, real = url_checks.host_forms(_host(url))
         if shown != real:
             text.append(f"  (really {real})", style=f"bold {colours.warning}")
         text.append("\n\n")
         append_findings(text, self.findings, colours, explain=False)
+        if self.external:
+            text.append("Your browser will run the page's scripts, keep its cookies and allow downloads.\n",
+                        style=f"bold {colours.warning}")
         text.append("Enter: open    Esc: don't open", style="dim")
         self.update(text)
 
     def action_decide(self, confirmed: bool) -> None:
         self.display = False
-        self.post_message(self.Decided(self.url, confirmed))
+        self.post_message(self.Decided(self.url, confirmed, self.external))
 
 
 class CloseButton(Static):
@@ -329,6 +355,7 @@ class LinkInspector(App):
         Binding("f", "forward", show=False),
         Binding("a", "ask_gemma", show=False),
         Binding("escape", "focus_page", show=False),
+        Binding("ctrl+o", "open_in_browser", "Open in browser"),
         Binding("f2", "next_design", "Design"),
     ]
 
@@ -513,11 +540,23 @@ class LinkInspector(App):
 
     @on(ConfirmBar.Decided)
     def confirm_decided(self, event: ConfirmBar.Decided) -> None:
-        if event.confirmed:
+        if event.confirmed and event.external:
+            opened = open_externally(event.url)
+            self.set_status(f"Opened {event.url} in your browser." if opened else
+                            "Couldn't start your browser; ctrl+c copies the address instead.")
+        elif event.confirmed:
             self.navigate(event.url)
         else:
             self.set_status("Not opened.")
             self.action_focus_page()
+
+    def action_open_in_browser(self) -> None:
+        """Hand a page you've inspected to your normal browser, e.g. to download something from it."""
+        snapshot = self.current
+        if snapshot is None or urlsplit(snapshot.final_url).scheme not in policy.ALLOWED_SCHEMES:
+            self.set_status("There's no web page to open in your browser.")
+            return
+        self.query_one(ConfirmBar).ask(snapshot.final_url, list(snapshot.findings), external=True)
 
     def action_toggle_javascript(self) -> None:
         self.javascript = not self.javascript
