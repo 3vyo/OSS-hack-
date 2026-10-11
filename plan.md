@@ -155,7 +155,7 @@ Logins, submitting forms, tabs, browser extensions, element-hiding rules, anothe
 app.py          Textual UI, navigation state, findings/coverage/AI/filtering status
 fetch_static.py httpx static fetch
 browser.py      Chromium lifecycle, per-inspection context, capture, page-change check, screenshots
-proxy.py        local policy proxy: checks every Chromium connection
+proxy.py        local policy proxy: checks every Chromium connection (and each redirect step)
 policy.py       URL/network rules, redirects, limits, .test mapping, route handler
 blocking.py     adblock engine, filter list cache and --update-filters, list attribution
 snapshot.py     snapshot and evidence types shared by both modes
@@ -294,21 +294,31 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - **Phase 5 (Chromium):** also load the **EasyList Cookie List** (download not done yet: `secure.fanboy.co.nz` did not resolve and the obvious mirrors returned 404, so find its current URL first), which blocks consent-tool scripts at the network level, and use `adblock`'s element-hiding rules for screenshots, so banners don't cover the page Gemma looks at.
 
 ### 5. JavaScript mode in Chromium
-- [ ] `blocking.py`: loads cached lists plus `filters/demo.txt`, shows version/date, shows "filtering unavailable" when lists are missing, `--update-filters` works
-- [ ] `proxy.py`: `CONNECT` and plain HTTP, refuses private/loopback/link-local addresses and other ports, connects to the checked IP
-- [ ] Chromium launched with the proxy, bypass list `<-loopback>`, `--disable-quic`, WebRTC flag
-- [ ] `browser.py`: browser started when first needed; fresh session per inspection, closed after capture
-- [ ] Session settings: no downloads, service workers blocked, no permissions
-- [ ] `context.route()` installed before any page: `.test` answered from files, `adblock`, every decision logged
-- [ ] Snapshot built from the same load: original HTML plus final DOM
-- [ ] Page-change check: marker plus `framenavigated`, one retry, otherwise "comparison unavailable"; JavaScript redirects recorded
-- [ ] Forms that only appear after JavaScript runs are flagged
-- [ ] Request panel (references / seen / blocked kept separate)
-- [ ] `r` key switches to JavaScript mode
-- [ ] Test: 302 redirect to `127.0.0.1:<port>`; a dummy listener there counts zero connections
-- [ ] Test: popup aimed at a forbidden address never connects
-- [ ] Pass: JavaScript-only demo page renders; panel shows real blocks
-- [ ] Committed
+- [x] `blocking.py`: loads cached lists plus `filters/demo.txt`, shows version/date, shows "filtering unavailable" when lists are missing, `--update-filters` works (`python app.py --update-filters`; EasyList, EasyPrivacy and EasyList Cookie Notices)
+- [x] `proxy.py`: `CONNECT` and plain HTTP, refuses private/loopback/link-local addresses and other ports, connects to the checked IP
+- [x] Chromium launched with the proxy, bypass list `<-loopback>`, `--disable-quic`, WebRTC flag
+- [x] `browser.py`: browser started when first needed; fresh session per inspection, closed after capture
+- [x] Session settings: no downloads, service workers blocked, no permissions
+- [x] `context.route()` installed before any page: `.test` answered from files, `adblock`, every decision logged
+- [x] Snapshot built from the same load: original HTML plus final DOM
+- [x] Page-change check: random marker plus a count of main-frame documents, one retry, otherwise "comparison unavailable"; JavaScript redirects recorded
+- [x] Forms that only appear after JavaScript runs are flagged (warning alongside a danger finding, otherwise info)
+- [x] Request panel (references / let through / blocked / refused kept separate)
+- [x] **ctrl+r** (or **r**) switches JavaScript mode on and off and reloads the page
+- [x] Test: 302 redirect to `127.0.0.1:<port>`; a dummy listener there counts zero connections (with a control run proving the listener does see unprotected connections)
+- [x] Test: popup aimed at a forbidden address never connects
+- [x] Pass: JavaScript-only demo page renders; panel shows real blocks (77 tests in total)
+- [x] Committed
+
+#### Phase 5 notes
+- **Playwright never routes the next step of a redirect it was handed**, including redirects our own route handler fulfilled. So:
+  - **real sites:** every redirect step goes through the proxy, which enforces the rules. This is exactly why the proxy exists, and it's tested with a real HTTP server.
+  - **demo pages:** their own redirects (`short.test` → `hop.test` → `news.test`) are followed by linkinspector itself before Chromium navigates. They're local files, so this is equivalent.
+- **Plain-HTTP refusals:** Chromium shows the proxy's 403 as if the site sent it, so the proxy adds an `x-linkinspector-refused` header with the reason, and the app reports a refusal instead of an empty 403 page.
+- **Defence in depth:** private IP literals and `localhost` are refused by the route handler; names that *resolve* to local addresses (this laptop's own hostname → 127.0.1.1) are refused by the proxy.
+- **Checked live:** google.com loads (12 Google telemetry requests blocked, cookie notice hidden); BBC News loads with 6 trackers blocked (scorecardresearch, chartbeat, dotmetrics…).
+- **Google Search answers headless Chromium with a robot check (HTTP 429, CAPTCHA).** linkinspector doesn't try to get around it; it says so in the coverage notes. Searching from the address bar uses DuckDuckGo instead.
+- **EasyList Cookie Notices** comes from uBlock Origin's up-to-date mirror (`ublockorigin.github.io/uAssets/thirdparties/easylist-cookies.txt`); the old fanboy host doesn't resolve and the adblockplus copy dates from March 2024.
 
 ### 6. Extras (in order, only with time left)
 - [ ] Screenshot brand check
@@ -336,25 +346,25 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 ## Demo pages and test cases
 Tick when the demo page exists **and** the app behaves as expected on it.
 
-- [ ] A normal article, and a JavaScript-populated article
+- [x] A normal article, and a JavaScript-populated article (`news.test`, `spa.test`)
 - [x] Normal single sign-on (should not be flagged as phishing): `intranet.test`, one info finding only
 - [x] `paypa1` and Cyrillic lookalike domains: `paypa1-secure.test`, `pаypal.test` (`xn--pypal-4ve.test`)
 - [x] A misleading subdomain (`paypal.com.account-verify.test`)
 - [x] A link whose text lies about its destination (on `paypa1-secure.test`)
-- [ ] A login form added by JavaScript
-- [ ] A page that navigates itself during capture (comparison marked unavailable, JavaScript redirect recorded)
+- [x] A login form added by JavaScript (`news.test` in JavaScript mode)
+- [x] A page that navigates itself during capture (comparison marked unavailable, JavaScript redirect recorded): `jsredirect.test` settles on its second try; `bouncy.test` never settles
 - [x] Hidden instructions aimed at the AI: code findings remain and the AI can't act. This doesn't prove the app resists every injection. (`prize.test`)
 - [x] Cookie-consent banners removed from the reader view (`cookies.test`), and a consent wall reported (`video.test/watch` → `consent.test`)
 - [x] A banner with meaningless class names, found by its "Reject all" / "Accept all" buttons (Google; `tests/test_static.py`)
-- [ ] Cookie banners in JavaScript mode: EasyList Cookie List blocks consent scripts; screenshots aren't covered by a banner
+- [ ] Cookie banners in JavaScript mode: EasyList Cookie List blocks consent scripts; screenshots aren't covered by a banner — list loaded and blocking (e.g. Cookiebot), and banners are removed from the reader text; screenshots not built yet
 - [ ] Optional, JavaScript mode: a real per-inspection cookie choice. Click the banner's "Reject all" by default, or "Accept all" if the user picks it, before capturing; cookies are thrown away with the session. Only worth it for consent walls that hide content until you choose.
-- [ ] A page that requests a demo tracker, run with blocking on and off
-- [ ] Filter lists missing: "filtering unavailable" shown
+- [x] A page that requests a demo tracker, run with blocking on and off
+- [x] Filter lists missing: "filtering unavailable" shown
 - [x] A redirect chain (`short.test` → `hop.test` → `news.test`)
-- [ ] A redirect to a loopback address (Chromium mode: dummy listener sees zero connections) — static mode done: `bounce.test/local` is stopped at `127.0.0.1`
-- [ ] Links to local network addresses — static mode done (`bounce.test/router`, `localhost`, `2130706433`, `[::ffff:127.0.0.1]`); Chromium mode still to test
-- [ ] A popup aimed at a forbidden address
-- [ ] Download attempts
+- [x] A redirect to a loopback address (Chromium mode: dummy listener sees zero connections; static mode: `bounce.test/local` is stopped at `127.0.0.1`)
+- [x] Links to local network addresses (static: `bounce.test/router`, `localhost`, `2130706433`, `[::ffff:127.0.0.1]`; Chromium: popup, redirect and this laptop's own hostname)
+- [x] A popup aimed at a forbidden address
+- [x] Download attempts (refused in JavaScript mode; static mode never shows non-HTML)
 - [ ] Slow loads, slow model, Ollama off — Ollama off done (`tests/test_llm.py`)
 - [ ] Partial extraction, very large pages
 - [ ] Markup and terminal escape codes in the page title
@@ -366,6 +376,7 @@ Tick when the demo page exists **and** the app behaves as expected on it.
 - **Phishing kits can detect your browser and show it a clean page**, so a clean result isn't proof of safety.
 - **Static mode only sees resources declared in the HTML.**
 - **The policy proxy only covers traffic that goes through it.** WebRTC is reduced by a launch flag rather than fully closed. Static mode has a DNS-rebinding gap unless httpx is also pointed at the proxy.
+- **Some sites refuse headless browsers.** Google Search shows a robot check (CAPTCHA) in JavaScript mode; linkinspector reports it rather than trying to get around it.
 - **Code findings are observations, not verdicts.** Single sign-on, Unicode domains and IP hosts can all be legitimate.
 - **Filter lists have their own licences** (EasyList/EasyPrivacy: GPLv3 / CC BY-SA 3.0). Credit them, and don't copy them into the repo.
 

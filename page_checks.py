@@ -92,11 +92,29 @@ def _link_findings(snapshot: Snapshot) -> list[Finding]:
     return findings
 
 
+def _js_form_findings(snapshot: Snapshot, other_findings: list[Finding]) -> list[Finding]:
+    """Password forms in the final page that weren't in the HTML the server sent (Chromium mode)."""
+    if snapshot.mode != "chromium" or not snapshot.dom_comparable:
+        return []
+    original = {(form.action, form.method) for form in snapshot.original_forms if form.has_password}
+    added = [form for form in snapshot.forms if form.has_password and (form.action, form.method) not in original]
+    # On its own this is common (many web apps build their forms with JavaScript), so it only
+    # becomes a warning alongside a danger finding.
+    severity = "warning" if any(f.severity == "danger" for f in other_findings) else "info"
+    return [Finding(
+        "", "js-added-form", severity,
+        f"A password form (sending to {urlsplit(form.action).hostname}) only appears after the page's JavaScript "
+        f"runs; it isn't in the HTML the server sent.",
+        "Phishing kits often add their login form with JavaScript so that scanners reading only the HTML miss it. "
+        "Many ordinary web apps do this too.") for form in added]
+
+
 def analyse(snapshot: Snapshot) -> Snapshot:
     """Attach URL and page findings, with evidence IDs, to a snapshot."""
     urls = [hop.url for hop in snapshot.redirects] + [snapshot.final_url]
     url_findings = [finding for url in urls for finding in url_checks.check(url)]
     page_findings = [] if snapshot.error else (
         _form_findings(snapshot) + _brand_title_findings(snapshot) + _link_findings(snapshot))
+    page_findings += _js_form_findings(snapshot, url_findings + page_findings)
     findings = url_checks.numbered(url_findings, "U") + url_checks.numbered(page_findings, "P")
     return replace(snapshot, findings=tuple(findings))

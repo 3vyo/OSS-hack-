@@ -86,3 +86,8 @@ def test_small_page_wrapper_is_not_removed_with_its_banner():
     page = render.parse(html, "https://library.example/")
     assert "Opening times for the library" in page.markdown
     assert "uses cookies" not in page.markdown
+
+
+def test_robot_check_is_recognised():
+    assert render.is_robot_check(429, "Our systems have detected unusual traffic from your computer network.")
+    assert not render.is_robot_check(200, "Our systems have detected unusual traffic")

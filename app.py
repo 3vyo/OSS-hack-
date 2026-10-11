@@ -1,6 +1,7 @@
 """Textual UI, navigation state, findings/coverage/AI/filtering status."""
 
-import sys
+import argparse
+import asyncio
 from urllib.parse import quote_plus, unquote, urldefrag, urljoin, urlsplit
 
 from markdown_it import MarkdownIt
@@ -12,12 +13,14 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
 from textual.widgets import Footer, Input, Markdown, Static
 
+import blocking
 import clipboard
 import fetch_static
 import llm
 import page_checks
 import policy
 import url_checks
+from browser import Browser
 from llm import Analysis
 from render import safe_text
 from snapshot import Finding, Snapshot
@@ -29,8 +32,12 @@ WELCOME = f"""\
 # linkinspector
 
 Paste a link in the bar above and press **Enter**, or type some words to search the web
-(with DuckDuckGo). Pages are fetched without running any JavaScript, and links only open
-through linkinspector, never in another browser.
+(with DuckDuckGo). Pages are read as static HTML without running any JavaScript, and links
+only open through linkinspector, never in another browser.
+
+**JavaScript mode:** press **ctrl+r** to load pages with their JavaScript in a sandboxed headless
+Chromium. Trackers are blocked, every connection is checked against the network rules, and
+cookies are thrown away after each page. Press **ctrl+r** again to go back to static mode.
 
 **Copy and paste:** paste a link with **ctrl+v**. To copy, select text with the mouse and press
 **ctrl+c**; with nothing selected, **ctrl+c** copies the page's address.
@@ -38,9 +45,9 @@ through linkinspector, never in another browser.
 [Open the demo pages]({HOME_URL})
 """
 NEEDS_JAVASCRIPT = """\
-> **This page needs JavaScript, which static mode doesn't run,** so it can't be used here, and what's
-> below may be only menus or a fallback message. JavaScript mode isn't built yet. To search the web,
-> type words into the address bar.
+> **This page needs JavaScript, which static mode doesn't run,** so what's below may be only menus or a
+> fallback message. Press **ctrl+r** to load it with JavaScript in a sandboxed, filtered headless Chromium.
+> To search the web, you can also type words into the address bar.
 
 ---
 
@@ -73,6 +80,7 @@ class AddressBar(Input):
         start, end = self.selection
         self.replace(" ".join(text.split()), start, end)  # a link copied with line breaks
 
+
 SEVERITY_COLOUR = {"danger": "red", "warning": "yellow", "info": "cyan"}
 SEVERITY_ORDER = {"danger": 0, "warning": 1, "info": 2}
 CHECK_LABELS = {
@@ -90,6 +98,7 @@ CHECK_LABELS = {
     "brand-title": "Brand named in title",
     "brand-official": "Official brand site",
     "link-text-mismatch": "Misleading link text",
+    "js-added-form": "Form added by JavaScript",
 }
 
 
@@ -119,6 +128,33 @@ def cookie_summary(choices: tuple[str, ...]) -> str:
     offered = [choice for choice in choices if choice != "(no buttons)"]
     hidden = f"Cookie notice hidden (it offered: {', '.join(offered)})." if offered else "Cookie notice hidden."
     return f"{hidden} Nothing was accepted. {always}"
+
+
+def _first_per_host(records, limit: int = 8):
+    by_host = {}
+    for record in records:
+        by_host.setdefault(_host(record.url) or record.url, record)
+    return list(by_host.values())[:limit]
+
+
+def request_summary(snapshot: Snapshot) -> str:
+    """Tracker references (static), or what the filter and network rules did (JavaScript mode)."""
+    if snapshot.mode == "static":
+        references = [r for r in snapshot.requests if r.decision == "reference"]
+        trackers = [r for r in references if r.rule]
+        lines = [f"{len(trackers)} known tracker{'s' * (len(trackers) != 1)} among {len(references)} resources "
+                 f"named in the HTML. Static mode loads none of them."]
+        lines += [f"• {_host(r.url)}  ({r.rule})" for r in _first_per_host(trackers)]
+        return "\n".join(lines)
+    let_through = [r for r in snapshot.requests if r.decision in ("fixture", "allowed")]
+    blocked = [r for r in snapshot.requests if r.decision == "blocked"]
+    refused = [r for r in snapshot.requests if r.decision == "refused"]
+    lines = [f"{len(let_through)} let through · {len(blocked)} blocked by filter rules · "
+             f"{len(refused)} refused by the network rules"]
+    lines += [f"× {_host(r.url)}  ({r.rule})" for r in _first_per_host(blocked)]
+    lines += [f"! {r.url}  ({r.rule})" for r in refused[:4]]
+    lines.append("“Let through” means the rules allowed it, not that the server answered.")
+    return "\n".join(lines)
 
 
 def is_risky(snapshot: Snapshot) -> bool:
@@ -159,7 +195,8 @@ def append_analysis(info: Text, snapshot: Snapshot, analysis: Analysis | None, a
     info.append(f"{message}\n\n", style="dim" if status is None else "")
 
 
-def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: bool | None = None) -> Text:
+def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: bool | None = None,
+              filtering: str = "") -> Text:
     """The side panel. Built from Text objects, so page content is never parsed as markup."""
     info = Text()
 
@@ -179,14 +216,19 @@ def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: b
         append_findings(info, snapshot.findings)
     else:
         info.append("No findings in inspected content.\n\n")
-    row("Mode", "static (no JavaScript)" if snapshot.mode == "static" else "Chromium")
+    row("Mode", "static (no JavaScript)" if snapshot.mode == "static" else
+        "JavaScript (sandboxed headless Chromium, filtered)")
     if snapshot.status is not None:
         row("Response", f"{snapshot.status} {snapshot.content_type}".strip())
     shown, real = url_checks.host_forms(_host(snapshot.final_url))
     row("Address", snapshot.final_url + (f"\n(really {real})" if shown != real else ""))
     if snapshot.redirects:
-        hops = [f"{r.status or 'JS'} {r.url}" for r in snapshot.redirects]
+        hops = [f"{'JS' if r.kind == 'javascript' else r.status or '→'} {r.url}" for r in snapshot.redirects]
         row(f"Redirects ({len(snapshot.redirects)})", "\n".join(hops + [f"→ {snapshot.final_url}"]), "yellow")
+    if snapshot.requests:
+        row("Requests", request_summary(snapshot))
+    if filtering:
+        row("Filtering", filtering, "yellow" if filtering.startswith("unavailable") else "")
     if not snapshot.error:
         with_password = sum(form.has_password for form in snapshot.forms)
         row("Cookies", cookie_summary(snapshot.cookie_choices))
@@ -251,6 +293,8 @@ class LinkInspector(App):
         Binding("alt+left", "back", "Back"),
         Binding("alt+right", "forward", "Forward"),
         Binding("ctrl+g", "ask_gemma", "Ask Gemma"),
+        Binding("ctrl+r", "toggle_javascript", "JavaScript"),
+        Binding("r", "toggle_javascript", show=False),
         # Selected text is copied by the screen's own ctrl+c; this runs when nothing is selected.
         Binding("ctrl+c", "copy_address", "Copy"),
         Binding("b", "back", show=False),
@@ -268,6 +312,10 @@ class LinkInspector(App):
         self.pending_page_id: int | None = None
         self.analyses: dict[int, Analysis] = {}
         self.analyst = llm.Analyst(self.analysis_updated, self.is_current_page, host=ai_host, client=ai_client)
+        self.filters: blocking.Filters | None = None
+        self.filters_ready = asyncio.Event()
+        self.browser = Browser(lambda: self.filters)
+        self.javascript = False  # JavaScript mode, for this and new pages
 
     def compose(self) -> ComposeResult:
         yield AddressBar(placeholder="Paste a link, or type words to search, and press Enter", id="url")
@@ -282,10 +330,22 @@ class LinkInspector(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.run_worker(self.load_filters(), group="filters", exit_on_error=False)
         self.run_worker(self.analyst.run(), group="gemma", exit_on_error=False)
         self.run_worker(self.warm_up(), group="gemma-warm-up", exit_on_error=False)
         if self.start_url:
             self.request_navigation(self.start_url, from_link=False)
+
+    async def load_filters(self) -> None:
+        try:
+            self.filters = await asyncio.to_thread(blocking.load)
+        finally:
+            self.filters_ready.set()
+        if self.current:
+            self.refresh_side()
+
+    async def on_unmount(self) -> None:
+        await self.browser.close()
 
     async def warm_up(self) -> None:
         await self.analyst.warm_up()
@@ -304,11 +364,14 @@ class LinkInspector(App):
     def refresh_side(self) -> None:
         snapshot = self.current
         analysis = self.analyses.get(snapshot.page_id)
-        self.query_one("#info", Static).update(page_info(snapshot, analysis, self.analyst.available))
+        filtering = self.filters.summary if self.filters else "loading the filter lists…"
+        self.query_one("#info", Static).update(page_info(snapshot, analysis, self.analyst.available, filtering))
         count = len(snapshot.findings)
         where = f"{count} finding{'s' * (count != 1)} · page {self.position + 1} of {len(self.history)}"
         if analysis and analysis.status in ("queued", "analysing"):
             where += " · Gemma is analysing…"
+        if self.javascript:
+            where += " · JavaScript mode on"
         self.set_status(f"Could not open the page · {where}" if snapshot.error else where)
 
     def action_ask_gemma(self) -> None:
@@ -384,15 +447,31 @@ class LinkInspector(App):
             self.set_status("Not opened.")
             self.action_focus_page()
 
+    def action_toggle_javascript(self) -> None:
+        self.javascript = not self.javascript
+        if self.javascript:
+            self.notify("JavaScript mode on: pages run their scripts in a sandboxed, filtered headless Chromium.")
+        else:
+            self.notify("JavaScript mode off: pages are read as static HTML.")
+        if self.current is not None:
+            self.navigate(self.current.requested_url)  # a new inspection, which contacts the site again
+
     def navigate(self, url: str) -> None:
         self.next_page_id += 1
         self.pending_page_id = self.next_page_id
-        self.set_status(f"Loading {url} …")
-        self.load(url, self.next_page_id)
+        self.set_status(f"Loading {url} " + ("with JavaScript …" if self.javascript else "…"))
+        self.load(url, self.next_page_id, self.javascript)
 
     @work(exclusive=True, group="navigation")
-    async def load(self, url: str, page_id: int) -> None:
-        snapshot = page_checks.analyse(await fetch_static.fetch(url, page_id))
+    async def load(self, url: str, page_id: int, javascript: bool) -> None:
+        await self.filters_ready.wait()
+        if javascript:
+            snapshot = await self.browser.inspect(url, page_id)
+        else:
+            snapshot = await fetch_static.fetch(url, page_id)
+            if self.filters is not None:
+                snapshot = self.filters.label_references(snapshot)
+        snapshot = page_checks.analyse(snapshot)
         if page_id != self.pending_page_id:
             return  # the user has moved on; never show a stale page
         self.pending_page_id = None
@@ -441,5 +520,18 @@ class LinkInspector(App):
         self.query_one("#reader", VerticalScroll).focus()
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="A read-only terminal browser for checking suspicious links.")
+    parser.add_argument("url", nargs="?", help="a link to open straight away")
+    parser.add_argument("--update-filters", action="store_true",
+                        help=f"download the tracker filter lists to {blocking.LIST_DIR} and exit")
+    args = parser.parse_args()
+    if args.update_filters:
+        for line in blocking.update():
+            print(line)
+        return
+    LinkInspector(args.url).run()
+
+
 if __name__ == "__main__":
-    LinkInspector(sys.argv[1] if len(sys.argv) > 1 else None).run()
+    main()

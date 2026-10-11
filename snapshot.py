@@ -49,8 +49,10 @@ class Finding:
 class RequestRecord:
     url: str
     resource_type: str
-    decision: str  # "fixture", "allowed", "blocked" or "refused"
-    rule: str = ""
+    # Chromium mode: "fixture", "allowed", "blocked" (filter rule) or "refused" (network rules).
+    # Static mode: "reference", a resource named in the HTML but never loaded.
+    decision: str
+    rule: str = ""  # the matching filter rule, or why the network rules refused it
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,8 @@ class Snapshot:
     redirects: tuple[Redirect, ...] = ()
     original_html: str = ""
     dom_html: str | None = None  # Chromium mode only
+    original_forms: tuple[Form, ...] = ()  # forms in original_html, to spot ones added by JavaScript
+    dom_comparable: bool = False  # original_html and dom_html are the same document
     title: str = ""
     base_url: str = ""
     markdown: str = ""

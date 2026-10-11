@@ -35,6 +35,7 @@ class Page:
     notes: tuple[str, ...]
     cookie_choices: tuple[str, ...] = ()  # what a hidden cookie notice offered
     needs_javascript: bool = False
+    resources: tuple[tuple[str, str], ...] = ()  # (url, request type) of scripts, images, frames… in the HTML
 
 
 # Search engines wrap result links in a tracking redirect; the real destination is a parameter.
@@ -126,6 +127,16 @@ _CONSENT_WORDS = re.compile(r"\b(accept|agree|consent|reject|decline|preferences
 _CONSENT_ACTION = re.compile(r"^(accept|reject|allow|deny|decline|refuse|agree|ok)\b", re.IGNORECASE)
 _CONSENT_MAX_TEXT = 3000
 _NEVER_REMOVE = {"html", "body", "main", "article"}
+ROBOT_CHECK_NOTE = ("the site showed a robot check (CAPTCHA) instead of the page; linkinspector doesn't try to "
+                    "get around these. To search, type words into the address bar (DuckDuckGo)")
+_ROBOT_CHECK = re.compile(r"unusual traffic|not a robot|are you a robot|captcha|verify you are (?:a )?human",
+                          re.IGNORECASE)
+
+
+def is_robot_check(status: int | None, text: str) -> bool:
+    return status in (403, 429, 503) and bool(_ROBOT_CHECK.search(text))
+
+
 CONSENT_WALL_NOTE = ("this page seems to be only a cookie-consent notice; linkinspector never accepts cookies, "
                      "so the real content may be missing")
 
@@ -178,6 +189,34 @@ def _remove_consent_banners(doc) -> list[str]:
     return list(dict.fromkeys(choices))
 
 
+# Elements that make a browser load something, and the request type each one makes.
+_RESOURCE_TAGS = (("script", "src", "script"), ("img", "src", "image"), ("iframe", "src", "subdocument"),
+                  ("frame", "src", "subdocument"), ("audio", "src", "media"), ("video", "src", "media"),
+                  ("source", "src", "media"), ("embed", "src", "object"), ("object", "data", "object"))
+
+
+def _resources(doc, base: str) -> tuple[tuple[str, str], ...]:
+    found = []
+    for tag, attribute, kind in _RESOURCE_TAGS:
+        for element in doc.iter(tag):
+            if value := (element.get(attribute) or "").strip():
+                found.append((urljoin(base, value), kind))
+    for link in doc.iter("link"):
+        rel = (link.get("rel") or "").lower().split()
+        if (href := (link.get("href") or "").strip()) and {"stylesheet", "preload", "prefetch", "modulepreload"} & set(rel):
+            found.append((urljoin(base, href), "stylesheet" if "stylesheet" in rel else "other"))
+    return tuple(dict.fromkeys(item for item in found if urlsplit(item[0]).scheme in ("http", "https")))
+
+
+def parse_forms(html: str, url: str) -> tuple[Form, ...]:
+    """Just the forms, e.g. of the HTML the server sent before any JavaScript ran."""
+    try:
+        doc = _document(html)
+    except lxml.etree.ParserError:
+        return ()
+    return _forms(doc, url, _base_url(doc, url))
+
+
 def _fallback_text(doc) -> str:
     for element in doc.iter("script", "style", "noscript", "template"):
         element.drop_tree()
@@ -185,7 +224,8 @@ def _fallback_text(doc) -> str:
     return "\n\n".join(line for line in lines if line)
 
 
-def parse(html: str, url: str) -> Page:
+def parse(html: str, url: str, scripts_ran: bool = False) -> Page:
+    """scripts_ran: html is a DOM captured after JavaScript ran (Chromium mode)."""
     try:
         doc = _document(html)
     except lxml.etree.ParserError:
@@ -217,7 +257,8 @@ def parse(html: str, url: str) -> Page:
         notes.append("no main article found; showing all page text")
     if (cookie_choices and len(markdown) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
         notes.append(CONSENT_WALL_NOTE)
-    needs_javascript = bool(js_notices) or (len(markdown) < 300 and doc.find(".//script") is not None)
+    needs_javascript = not scripts_ran and (
+        bool(js_notices) or (len(markdown) < 300 and doc.find(".//script") is not None))
     if needs_javascript:
         notes.append("this page needs JavaScript to show its content, which static mode doesn't run")
     return Page(
@@ -229,4 +270,5 @@ def parse(html: str, url: str) -> Page:
         notes=tuple(notes),
         cookie_choices=tuple(safe_text(choice) for choice in cookie_choices),
         needs_javascript=needs_javascript,
+        resources=_resources(doc, base),
     )

@@ -97,7 +97,8 @@ class Analysis:
 
 def evidence_packet(snapshot: Snapshot) -> tuple[str, bool]:
     """The model's input: URL, title, forms, code findings with IDs, and the start of the page text."""
-    lines = [f"URL: {snapshot.final_url}", f"Title: {snapshot.title or '(none)'}"]
+    mode = "JavaScript ran in a headless browser" if snapshot.mode == "chromium" else "static HTML only, no JavaScript"
+    lines = [f"URL: {snapshot.final_url}", f"Title: {snapshot.title or '(none)'}", f"Captured: {mode}"]
     if snapshot.redirects:
         lines.append("Redirects: " + " -> ".join([hop.url for hop in snapshot.redirects] + [snapshot.final_url]))
     for form in snapshot.forms[:3]:

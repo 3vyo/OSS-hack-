@@ -8,7 +8,7 @@ import httpx
 
 import policy
 import render
-from snapshot import Redirect, Snapshot
+from snapshot import Redirect, RequestRecord, Snapshot
 
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36")
@@ -54,12 +54,15 @@ def _build(page_id: int, url: str, response: httpx.Response, body: bytes, trunca
                         markdown=f"*This is not a web page ({content_type}), so it is not shown.*",
                         coverage=tuple(coverage + [f"not an HTML page ({content_type})"]))
     page = render.parse(html, final_url)
+    if render.is_robot_check(response.status_code, page.markdown):
+        coverage.append(render.ROBOT_CHECK_NOTE)
     return Snapshot(
         page_id=page_id, mode="static", requested_url=url, final_url=final_url,
         status=response.status_code, content_type=content_type, redirects=tuple(redirects),
         original_html=html, title=page.title, base_url=page.base_url, markdown=page.markdown,
         links=page.links, forms=page.forms, coverage=tuple(coverage) + page.notes,
         cookie_choices=page.cookie_choices, needs_javascript=page.needs_javascript,
+        requests=tuple(RequestRecord(url, kind, "reference") for url, kind in page.resources),
     )
 
 

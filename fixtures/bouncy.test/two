@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Step two</title></head>
+<body>
+<p>Step two.</p>
+<script>setTimeout(() => location.replace("https://bouncy.test/"), 600);</script>
+</body>
+</html>
