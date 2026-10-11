@@ -12,9 +12,11 @@ from textual.message import Message
 from textual.widgets import Footer, Input, Markdown, Static
 
 import fetch_static
+import llm
 import page_checks
 import policy
 import url_checks
+from llm import Analysis
 from render import safe_text
 from snapshot import Finding, Snapshot
 
@@ -43,6 +45,7 @@ CHECK_LABELS = {
     "sso-form": "Single sign-on",
     "cross-site-form": "Password sent to another site",
     "brand-title": "Brand named in title",
+    "brand-official": "Official brand site",
     "link-text-mismatch": "Misleading link text",
 }
 
@@ -62,7 +65,49 @@ def append_findings(text: Text, findings: tuple[Finding, ...] | list[Finding], e
         text.append("\n")
 
 
-def page_info(snapshot: Snapshot) -> Text:
+RISK = {2: ("Risk: HIGH", "bold white on red"), 1: ("Risk: MEDIUM", "bold black on yellow"),
+        0: ("No warning signs found", "bold")}
+
+
+def is_risky(snapshot: Snapshot) -> bool:
+    return not snapshot.error and any(f.severity in ("warning", "danger") for f in snapshot.findings)
+
+
+def append_analysis(info: Text, snapshot: Snapshot, analysis: Analysis | None, available: bool | None) -> None:
+    info.append("Gemma (local AI)\n", style="bold underline")
+    status = analysis.status if analysis else None
+    if status == "done":
+        level = llm.ASSESSMENT_LEVEL[analysis.assessment]
+        info.append(f"{llm.ASSESSMENTS[analysis.assessment]}\n", style=f"bold {('cyan', 'yellow', 'red')[level]}")
+        for reason in analysis.reasons:
+            info.append(f"• [{', '.join(reason.evidence_ids)}] ", style="bold")
+            info.append(f"{reason.explanation}\n")
+        if analysis.claimed_brand:
+            info.append(f"Presents itself as: {analysis.claimed_brand}\n")
+        for note in (analysis.limitations, *analysis.notes):
+            if note:
+                info.append(f"{note}\n", style="dim italic")
+        info.append(f"Answered in {analysis.seconds:.0f} s. It can raise the risk, never lower it.\n\n", style="dim")
+        return
+    message = {
+        "queued": "Waiting for Gemma…",
+        "analysing": "Gemma is reading the evidence (usually 20–30 s on this laptop)…",
+        "skipped": "Not run, because you moved to another page. Press ctrl+g to ask.",
+        "unavailable": "Gemma isn't available, so there's no explanation. Start Ollama, then press ctrl+g. "
+                       "The code findings above still apply.",
+        "failed": f"Gemma's answer couldn't be used ({analysis.error if analysis else ''}). Press ctrl+g to try again.",
+    }.get(status)
+    if message is None:
+        if available is False:
+            message = "Gemma isn't running. Start Ollama, then press ctrl+g. The code findings above still apply."
+        elif snapshot.error:
+            message = "Not run: there's no page content to explain."
+        else:
+            message = "Not run (nothing above needs explaining). Press ctrl+g to ask Gemma about this page."
+    info.append(f"{message}\n\n", style="dim" if status is None else "")
+
+
+def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: bool | None = None) -> Text:
     """The side panel. Built from Text objects, so page content is never parsed as markup."""
     info = Text()
 
@@ -70,6 +115,13 @@ def page_info(snapshot: Snapshot) -> Text:
         info.append(f"{label}\n", style="bold")
         info.append(f"{safe_text(value)}\n\n", style=style)
 
+    level = llm.overall_level(snapshot, analysis)
+    label, style = RISK[level]
+    info.append(f" {label} ", style=style)
+    if level > llm.overall_level(snapshot, None):
+        info.append("  raised by Gemma", style="dim")
+    info.append("\n\n")
+    append_analysis(info, snapshot, analysis, available)
     info.append(f"Findings ({len(snapshot.findings)})\n", style="bold underline")
     if snapshot.findings:
         append_findings(info, snapshot.findings)
@@ -145,18 +197,22 @@ class LinkInspector(App):
         Binding("ctrl+l", "focus_url", "Address"),
         Binding("alt+left", "back", "Back"),
         Binding("alt+right", "forward", "Forward"),
+        Binding("ctrl+g", "ask_gemma", "Ask Gemma"),
         Binding("b", "back", show=False),
         Binding("f", "forward", show=False),
+        Binding("a", "ask_gemma", show=False),
         Binding("escape", "focus_page", show=False),
     ]
 
-    def __init__(self, start_url: str | None = None) -> None:
+    def __init__(self, start_url: str | None = None, ai_host: str | None = None, ai_client=None) -> None:
         super().__init__()
         self.start_url = start_url
         self.history: list[Snapshot] = []
         self.position = -1
         self.next_page_id = 0
         self.pending_page_id: int | None = None
+        self.analyses: dict[int, Analysis] = {}
+        self.analyst = llm.Analyst(self.analysis_updated, self.is_current_page, host=ai_host, client=ai_client)
 
     def compose(self) -> ComposeResult:
         yield Input(placeholder="Paste a link and press Enter", id="url")
@@ -171,8 +227,43 @@ class LinkInspector(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.run_worker(self.analyst.run(), group="gemma", exit_on_error=False)
+        self.run_worker(self.warm_up(), group="gemma-warm-up", exit_on_error=False)
         if self.start_url:
             self.request_navigation(self.start_url, from_link=False)
+
+    async def warm_up(self) -> None:
+        await self.analyst.warm_up()
+        if self.current:
+            self.refresh_side()
+
+    def is_current_page(self, page_id: int) -> bool:
+        return self.current is not None and self.current.page_id == page_id
+
+    def analysis_updated(self, analysis: Analysis) -> None:
+        """Results are stored per page, so a late answer never lands on the page shown now."""
+        self.analyses[analysis.page_id] = analysis
+        if self.is_current_page(analysis.page_id):
+            self.refresh_side()
+
+    def refresh_side(self) -> None:
+        snapshot = self.current
+        analysis = self.analyses.get(snapshot.page_id)
+        self.query_one("#info", Static).update(page_info(snapshot, analysis, self.analyst.available))
+        count = len(snapshot.findings)
+        where = f"{count} finding{'s' * (count != 1)} · page {self.position + 1} of {len(self.history)}"
+        if analysis and analysis.status in ("queued", "analysing"):
+            where += " · Gemma is analysing…"
+        self.set_status(f"Could not open the page · {where}" if snapshot.error else where)
+
+    def action_ask_gemma(self) -> None:
+        snapshot = self.current
+        if snapshot is None or snapshot.error:
+            self.set_status("There's no page content for Gemma to explain.")
+        elif self.analyses.get(snapshot.page_id, Analysis(0, "")).status in ("queued", "analysing"):
+            self.set_status("Gemma is already working on this page.")
+        else:
+            self.analyst.request(snapshot)
 
     @property
     def current(self) -> Snapshot | None:
@@ -244,6 +335,9 @@ class LinkInspector(App):
         self.history.append(snapshot)
         self.position = len(self.history) - 1
         await self.show(snapshot)
+        self.action_focus_page()
+        if is_risky(snapshot) and self.analyst.available is not False:
+            self.analyst.request(snapshot)  # automatic only when the code checks found something
 
     async def show(self, snapshot: Snapshot) -> None:
         self.query_one("#url", Input).value = snapshot.final_url
@@ -255,10 +349,7 @@ class LinkInspector(App):
         await self.query_one("#content", Markdown).update(body)
         self.query_one("#reader", VerticalScroll).scroll_home(animate=False)
         self.query_one("#side", VerticalScroll).scroll_home(animate=False)
-        self.query_one("#info", Static).update(page_info(snapshot))
-        count = len(snapshot.findings)
-        where = f"{count} finding{'s' * (count != 1)} · page {self.position + 1} of {len(self.history)}"
-        self.set_status(f"Could not open the page · {where}" if snapshot.error else where)
+        self.refresh_side()
 
     def cancel_loading(self) -> None:
         self.pending_page_id = None

@@ -90,3 +90,14 @@ def test_redirect_to_loopback_is_stopped_and_recorded():
     assert snapshot.final_url == "http://127.0.0.1/"
     assert [r.url for r in snapshot.redirects] == ["https://bounce.test/local"]
     assert "ip-host" in found
+
+
+def test_link_text_naming_a_parent_domain_is_consistent():
+    from snapshot import Link, Snapshot
+    snapshot = Snapshot(page_id=1, mode="static", requested_url="https://www.gov.uk/",
+                        final_url="https://www.gov.uk/", links=(
+                            Link("GOV.UK", "https://www.gov.uk", "https://www.gov.uk"),
+                            Link("paypal.com", "https://paypal.com.evil.test/", "https://paypal.com.evil.test/")))
+    found = page_checks.analyse(snapshot).findings
+    assert [f.observation for f in found if f.check == "link-text-mismatch"] == [
+        "A link says ‘paypal.com’ but really goes to paypal.com.evil.test."]

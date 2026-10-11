@@ -31,7 +31,7 @@ def _form_findings(snapshot: Snapshot) -> list[Finding]:
                 "Anyone on the same network could read the password."))
         if url_checks.site_of(action_host) == url_checks.site_of(page_host):
             findings.append(Finding(
-                "", "password-form", "warning",
+                "", "password-form", "info",
                 f"This page asks for a password (the form sends to {action_host}).",
                 "Phishing pages imitate pages that ask for passwords, so check the address carefully."))
         elif url_checks.host_in(action_host, SSO_DOMAINS):
@@ -55,7 +55,14 @@ def _brand_title_findings(snapshot: Snapshot) -> list[Finding]:
     title = snapshot.title.lower()
     findings = []
     for brand in url_checks.BRANDS:
-        if re.search(rf"\b{re.escape(brand.name.lower())}\b", title) and not url_checks.is_official(host, brand):
+        if not re.search(rf"\b{re.escape(brand.name.lower())}\b", title):
+            continue
+        if url_checks.is_official(host, brand):
+            findings.append(Finding(
+                "", "brand-official", "info",
+                f"The page title names {brand.name}, and {host} is one of {brand.name}'s official sites.",
+                "The address matches the brand the page claims to be. That doesn't prove the page is safe."))
+        else:
             findings.append(Finding(
                 "", "brand-title", "danger",
                 f"The page title names {brand.name} and asks for a password, but {host} isn't one of "
@@ -71,7 +78,11 @@ def _link_findings(snapshot: Snapshot) -> list[Finding]:
         real_host = urlsplit(link.url).hostname
         if not match or not real_host or not url_checks.has_public_suffix(match.group(1)):
             continue
-        if url_checks.site_of(match.group(1)) != url_checks.site_of(real_host):
+        shown_host = match.group(1).lower()
+        # "GOV.UK" linking to www.gov.uk is consistent; "paypal.com" linking to paypal.com.evil.test is not.
+        consistent = (url_checks.host_in(real_host, (shown_host,))
+                      or url_checks.site_of(shown_host) == url_checks.site_of(real_host))
+        if not consistent:
             shown, real = url_checks.host_forms(real_host)
             destination = shown if shown == real else f"{shown} (really {real})"
             findings.append(Finding(

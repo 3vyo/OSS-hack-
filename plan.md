@@ -251,14 +251,34 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - **The text extractor sometimes drops a page's main heading.** The title is shown separately, so nothing important is lost.
 
 ### 4. Gemma (finishes the minimum project)
-- [ ] `llm.py`: one-at-a-time queue, evidence packet, JSON schema, evidence ID check, page ID
-- [ ] Ollama settings: bounded `num_ctx`, short maximum output, `keep_alive`, warm-up request
-- [ ] AI status label (analysing / done / unavailable) and explanation panel
-- [ ] Gemma can only raise a warning, never clear one
-- [ ] Ollama off: app still works and shows "unavailable"
-- [ ] Hidden-instructions demo page: code findings remain
-- [ ] A slow answer never lands on a newer page
-- [ ] Committed and tagged `mvp`
+- [x] `llm.py`: one-at-a-time queue, evidence packet, JSON schema, evidence ID check, page ID
+- [x] Ollama settings: bounded `num_ctx` (4096), short maximum output (256 tokens), `keep_alive` (30 min), warm-up request, `think=False`
+- [x] AI status label (analysing / done / unavailable) and explanation panel
+- [x] Gemma can only raise a warning, never clear one
+- [x] Ollama off: app still works and shows "unavailable"
+- [x] Hidden-instructions demo page: code findings remain (`prize.test`: the injected text reaches Gemma, which still answers "likely phishing")
+- [x] A slow answer never lands on a newer page (answers are stored per page; tested with a delayed fake client)
+- [x] Committed and tagged `mvp`
+
+#### Phase 4 notes
+- **Measured in the app:** 17–33 s per answer. Gemma runs automatically when there's a warning or danger finding, and on **ctrl+g** (or **a**) otherwise.
+- **Gemma's section sits right under the risk badge**, above the code findings. "Risk: HIGH" is the highest of the code findings and Gemma's assessment; when Gemma raised it, the badge says so.
+- **Calibration:** at first Gemma called the legitimate Northbank page "likely phishing", just because it asks for a password. Three fixes:
+  - a same-site password form is now **info**, not a warning
+  - a new info finding notes when the page is on the brand's official site
+  - the prompt now says those cases are normal
+
+  Re-measured: Northbank gets "no extra concerns", single sign-on "no extra concerns", the PayPal lookalike and the voucher scam "likely phishing".
+- **Answer checking:** reasons citing evidence IDs that don't exist are dropped. `PAGE` is allowed for something in the page text. Invalid JSON or a bad assessment shows "couldn't be used".
+- **Tests use a fake Ollama client.** Gotcha: `app.workers.wait_for_complete([])` with an empty list waits for *every* worker, including Gemma's endless queue loop.
+
+#### Cookie pop-ups
+- **Reader view:** consent banners are removed before text extraction. An element is removed when its name or role looks like a consent tool (OneTrust, Cookiebot, GOV.UK-style banners, dialogs…) **and** it is small and talks about cookies and choices, so an article about baking cookies stays.
+- **Security checks still see the full page:** links and forms come from the original HTML.
+- **Coverage note** when banners were removed, and a **consent-wall note** when the page is mostly a consent notice or the host starts with `consent.`. linkinspector never accepts cookies, so it will always land on these.
+- **Gemma's prompt** says cookie notices and cookie-choice forms aren't a phishing sign. Removing banners also stops them using up Gemma's 800-character page-text budget.
+- **Checked on real sites:** GOV.UK's banner is removed. BBC's is added by JavaScript, so it doesn't appear in static mode.
+- **Phase 5 (Chromium):** also load the **EasyList Cookie List** (download not done yet: `secure.fanboy.co.nz` did not resolve and the obvious mirrors returned 404, so find its current URL first), which blocks consent-tool scripts at the network level, and use `adblock`'s element-hiding rules for screenshots, so banners don't cover the page Gemma looks at.
 
 ### 5. JavaScript mode in Chromium
 - [ ] `blocking.py`: loads cached lists plus `filters/demo.txt`, shows version/date, shows "filtering unavailable" when lists are missing, `--update-filters` works
@@ -310,7 +330,9 @@ Tick when the demo page exists **and** the app behaves as expected on it.
 - [x] A link whose text lies about its destination (on `paypa1-secure.test`)
 - [ ] A login form added by JavaScript
 - [ ] A page that navigates itself during capture (comparison marked unavailable, JavaScript redirect recorded)
-- [ ] Hidden instructions aimed at the AI: code findings remain and the AI can't act. This doesn't prove the app resists every injection.
+- [x] Hidden instructions aimed at the AI: code findings remain and the AI can't act. This doesn't prove the app resists every injection. (`prize.test`)
+- [x] Cookie-consent banners removed from the reader view (`cookies.test`), and a consent wall reported (`video.test/watch` → `consent.test`)
+- [ ] Cookie banners in JavaScript mode: EasyList Cookie List blocks consent scripts; screenshots aren't covered by a banner
 - [ ] A page that requests a demo tracker, run with blocking on and off
 - [ ] Filter lists missing: "filtering unavailable" shown
 - [x] A redirect chain (`short.test` → `hop.test` → `news.test`)
@@ -318,7 +340,7 @@ Tick when the demo page exists **and** the app behaves as expected on it.
 - [ ] Links to local network addresses — static mode done (`bounce.test/router`, `localhost`, `2130706433`, `[::ffff:127.0.0.1]`); Chromium mode still to test
 - [ ] A popup aimed at a forbidden address
 - [ ] Download attempts
-- [ ] Slow loads, slow model, Ollama off
+- [ ] Slow loads, slow model, Ollama off — Ollama off done (`tests/test_llm.py`)
 - [ ] Partial extraction, very large pages
 - [ ] Markup and terminal escape codes in the page title
 - [ ] Repeated navigation: memory stays bounded and no stale AI answers appear

@@ -7,13 +7,15 @@ from app import ConfirmBar, LinkInspector
 
 async def settle(app, pilot):
     await pilot.pause()
-    await app.workers.wait_for_complete()
+    navigation = [w for w in app.workers if w.group == "navigation"]
+    if navigation:  # an empty list would mean "wait for every worker", including Gemma's queue
+        await app.workers.wait_for_complete(navigation)
     await pilot.pause()
 
 
 def test_click_through_demo_pages_and_history():
     async def scenario():
-        app = LinkInspector("https://home.test/")
+        app = LinkInspector("https://home.test/", ai_host="http://127.0.0.1:9")
         async with app.run_test() as pilot:
             await settle(app, pilot)
             assert app.current.title == "linkinspector demo pages"
@@ -47,7 +49,7 @@ def test_click_through_demo_pages_and_history():
 
 def test_typed_lookalike_asks_first_and_can_be_cancelled():
     async def scenario():
-        app = LinkInspector()
+        app = LinkInspector(ai_host="http://127.0.0.1:9")
         async with app.run_test() as pilot:
             await pilot.click("#url")
             await pilot.press(*"paypa1-secure.test/login", "enter")
