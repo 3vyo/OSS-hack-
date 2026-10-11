@@ -355,11 +355,11 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - [ ] Ambient sound
 
 ### 7. Wrap-up (stop adding features at __:__)
-- [ ] README: what it is, setup, demo, limitations, licences and filter-list notices
-- [ ] Demo script written
-- [ ] Rehearsed with AI on
-- [ ] Rehearsed with AI off
-- [ ] Rehearsed with WiFi off
+- [x] README: what it is, setup (and what another device needs), demo pages, limitations, licences and filter-list notices
+- [x] Demo script written (`DEMO.md`), plus `setup.sh` (checked in a fresh clone) and `scripts/rehearse_demo.py`
+- [x] Rehearsed with AI on (`scripts/rehearse_demo.py`: 13/13 beats, Gemma 19–22 s per answer)
+- [x] Rehearsed with AI off (11/11 beats)
+- [ ] Rehearsed with WiFi off — automated run in a network namespace with no network at all passed 11/11 (Gemma unreachable there too); still do one real WiFi-off run with Gemma yourself
 - [ ] Pushed, and repo made public
 - [ ] Submitted
 
