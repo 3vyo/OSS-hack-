@@ -1,0 +1,1 @@
+"""httpx static fetch."""

@@ -1,0 +1,10 @@
+adblock==0.6.0
+confusable-homoglyphs==3.3.1
+httpx==0.28.1
+ollama==0.6.3
+playwright==1.63.0
+pytest==9.1.1
+RapidFuzz==3.14.6
+textual==8.2.8
+tldextract==5.4.0
+trafilatura==2.3.1

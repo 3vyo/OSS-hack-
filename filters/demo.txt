@@ -1,0 +1,3 @@
+! Title: linkinspector demo rules
+! Own rules for the .test demo pages, so blocking works without downloaded lists.
+||tracker.test^
