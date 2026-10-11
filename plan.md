@@ -206,7 +206,7 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - [x] `adblock` in `context.route()` blocks a demo tracker request (rule from `filters/demo.txt`)
 - [x] Request log, screenshot, and `response.text()` vs `page.content()` all work
 - [x] Gemma and Chromium running together: free memory 4.0 GB
-- [ ] Decision: Gemma runs automatically / only on request
+- [x] Decision: Gemma runs **automatically when the code checks found something**, and on a keypress otherwise
 - [x] Decision: Chromium **in** (all browser checks passed; memory is fine)
 
 #### Phase 1 results
@@ -218,13 +218,19 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - **Memory:** about 6.4 GB free with Chromium alone, 4.0 GB with Chromium and the loaded model.
 
 ### 2. Reader (static mode)
-- [ ] `snapshot.py` dataclasses (snapshot, link, form, finding, request record)
-- [ ] First demo pages: article, lookalike login, redirect chain
-- [ ] `fetch_static.py`: `MockTransport` for `.test`, redirects followed by your own code, time/size limits, returns a snapshot
-- [ ] `render.py`: trafilatura Markdown, plus your own link table resolved against `<base>`
-- [ ] `app.py`: URL bar, Markdown view with `open_links=False`, link-click handler, back/forward, status bar
-- [ ] Pass: click through the demo pages; back/forward works
-- [ ] Committed
+- [x] `snapshot.py` dataclasses (snapshot, link, form, finding, request record)
+- [x] First demo pages: article, lookalike login, redirect chain (plus a `home.test` start page)
+- [x] `fetch_static.py`: `MockTransport` for `.test`, redirects followed by your own code, time/size limits, returns a snapshot
+- [x] `render.py`: trafilatura Markdown, plus your own link table resolved against `<base>`
+- [x] `app.py`: URL bar, Markdown view with `open_links=False`, link-click handler, back/forward, status bar
+- [x] Pass: click through the demo pages; back/forward works (`tests/test_reader.py`, plus screenshots checked)
+- [x] Committed
+
+#### Phase 2 notes
+- **Use `Markdown`, never `MarkdownViewer`.** `MarkdownViewer` handles link clicks itself and tries to open the link's path as a local file.
+- **`Markdown.LinkClicked.href` arrives percent-decoded.** `app.resolve_link` maps it back to the page's link table to get the real destination.
+- **The text extractor drops a heading that repeats the page title**, so the reader shows the title separately above the text.
+- **Run it:** `.venv/bin/python app.py https://home.test/`. Tests: `.venv/bin/python -m pytest -q`.
 
 ### 3. Safety rules and checks
 - [ ] `policy.py`: `http`/`https` only, private IP block, redirect checks (max 5), connected to the static fetch
@@ -300,7 +306,7 @@ Tick when the demo page exists **and** the app behaves as expected on it.
 - [ ] Hidden instructions aimed at the AI: code findings remain and the AI can't act. This doesn't prove the app resists every injection.
 - [ ] A page that requests a demo tracker, run with blocking on and off
 - [ ] Filter lists missing: "filtering unavailable" shown
-- [ ] A redirect chain
+- [x] A redirect chain (`short.test` → `hop.test` → `news.test`)
 - [ ] A redirect to a loopback address (Chromium mode: dummy listener sees zero connections)
 - [ ] Links to local network addresses
 - [ ] A popup aimed at a forbidden address

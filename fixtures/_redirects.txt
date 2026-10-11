@@ -1,0 +1,3 @@
+# Demo redirects: <url> <status> <location>
+https://short.test/abc 301 https://hop.test/next
+https://hop.test/next 302 https://news.test/
