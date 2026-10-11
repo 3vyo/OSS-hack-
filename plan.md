@@ -332,6 +332,18 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
   - the "refused automated browser" note measured Markdown including link addresses instead of the page's text
   - an empty heading or list item passed its marker to the next text, and a list item whose text was in a `<div>` lost its bullet
   - link and button labels included hidden and script text
+- **uBlock Origin's default lists** (all downloaded by `--update-filters`, never copied into the repo):
+  - **Blocking:** EasyList, EasyPrivacy, uBlock filters, uBlock Privacy, uBlock Unbreak, uBlock Quick fixes, Peter Lowe's list and EasyList Cookie Notices.
+  - **Known phishing and malware sites:** uBlock Badware risks and the URLhaus Online Malicious URL Blocklist. These block too, and each also has its own engine, so a finding can say which list flagged a site.
+  - **Where those findings appear:** "Known phishing/malware site" (danger) on the link before fetching (confirm bar), on every redirect step and on the final address. "Uses a known malware site" (danger) when a page loads, or names, something from a listed site.
+  - **Demo list:** `filters/demo-badware.txt` lists `prize.test` so the demo shows the finding.
+- **The engine silently ignores some uBlock Origin syntax,** which would have disabled about 22,000 of URLhaus's 24,000 entries, so `blocking._normalise` rewrites it:
+  - `$all` is dropped
+  - URLhaus's bare `1.2.3.4` / `evil.example/x.exe` entries become `||…` rules
+  - rules with a path get a `$document` copy, because the engine only applies path rules to pages when they say `$document`
+
+  Checked: 300 out of 300 randomly sampled URLhaus entries are recognised, with no substring false positives. All ten lists load in about 0.6 s.
+- **Not like real uBlock Origin (yet):** no cosmetic filtering (hiding page elements), no scriptlets, and no harmless stand-ins for blocked scripts. The engine supports cosmetic rules (`url_cosmetic_resources`), so element hiding in JavaScript mode is a possible next step.
 - **EasyList Cookie Notices** comes from uBlock Origin's up-to-date mirror (`ublockorigin.github.io/uAssets/thirdparties/easylist-cookies.txt`); the old fanboy host doesn't resolve and the adblockplus copy dates from March 2024.
 
 ### 6. Extras (in order, only with time left)

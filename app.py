@@ -103,6 +103,8 @@ CHECK_LABELS = {
     "brand-official": "Official brand site",
     "link-text-mismatch": "Misleading link text",
     "js-added-form": "Form added by JavaScript",
+    "known-bad": "Known phishing/malware site",
+    "known-bad-resource": "Uses a known malware site",
 }
 
 
@@ -439,7 +441,8 @@ class LinkInspector(App):
         if urlsplit(url).scheme not in policy.ALLOWED_SCHEMES:
             self.navigate(url)  # refused by the fetch rules, shown as an error page
             return
-        findings = url_checks.numbered(url_checks.check(url), "U")
+        known_bad = self.filters.known_bad if self.filters else None
+        findings = url_checks.numbered(url_checks.check(url) + page_checks.known_bad_findings([url], known_bad), "U")
         risky = any(finding.severity != "info" for finding in findings)
         leaving = from_link and self.current is not None and (
             url_checks.site_of(_host(url)) != url_checks.site_of(_host(self.current.final_url)))
@@ -484,7 +487,7 @@ class LinkInspector(App):
                 snapshot = self.filters.label_references(snapshot)
             if self.javascript and _host(url) == SEARCH_HOST:
                 snapshot = dataclasses.replace(snapshot, coverage=snapshot.coverage + (SEARCH_NOTE,))
-        snapshot = page_checks.analyse(snapshot)
+        snapshot = page_checks.analyse(snapshot, self.filters.known_bad if self.filters else None)
         if page_id != self.pending_page_id:
             return  # the user has moved on; never show a stale page
         self.pending_page_id = None

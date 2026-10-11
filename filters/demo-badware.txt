@@ -1,0 +1,4 @@
+! Title: linkinspector demo "known bad" sites
+! For the .test demo pages only: these stand in for entries on lists like URLhaus.
+||prize.test^$doc
+||claims-processing.test^

@@ -1,6 +1,7 @@
 """Forms, misleading links, resource references."""
 
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from urllib.parse import urlsplit
 
@@ -109,12 +110,49 @@ def _js_form_findings(snapshot: Snapshot, other_findings: list[Finding]) -> list
         "Many ordinary web apps do this too.") for form in added]
 
 
-def analyse(snapshot: Snapshot) -> Snapshot:
+# known_bad(url, resource_type, source_url) -> (list name, rule) or None, from blocking.Filters.
+KnownBad = Callable[..., tuple[str, str] | None]
+
+
+def known_bad_findings(urls: list[str], known_bad: KnownBad | None) -> list[Finding]:
+    """Addresses on uBlock Origin's lists of known phishing and malware sites (Badware risks, URLhaus)."""
+    findings = []
+    for url in urls if known_bad else []:
+        if (match := known_bad(url)) is not None:
+            name, rule = match
+            findings.append(Finding(
+                "", "known-bad", "danger",
+                f"{urlsplit(url).hostname} is on {name}, a list of known phishing and malware sites (rule {rule}).",
+                "Security researchers keep these lists from reports of real attacks. An entry can be out of "
+                "date, but treat the site as dangerous."))
+    return findings
+
+
+def _known_bad_resource_findings(snapshot: Snapshot, known_bad: KnownBad | None) -> list[Finding]:
+    findings, seen = [], set()
+    for record in snapshot.requests if known_bad else []:
+        host = urlsplit(record.url).hostname
+        if record.resource_type in ("document", "connection") or not record.url.startswith("http") or host in seen:
+            continue
+        if (match := known_bad(record.url, record.resource_type, snapshot.final_url)) is not None:
+            seen.add(host)
+            verb = "names" if record.decision == "reference" else "loads"
+            findings.append(Finding(
+                "", "known-bad-resource", "danger",
+                f"The page {verb} a {record.resource_type} from {host}, which is on {match[0]}, a list of known "
+                f"phishing and malware sites.",
+                "Compromised and malicious pages often pull their payload in from another site."))
+    return findings
+
+
+def analyse(snapshot: Snapshot, known_bad: KnownBad | None = None) -> Snapshot:
     """Attach URL and page findings, with evidence IDs, to a snapshot."""
     urls = [hop.url for hop in snapshot.redirects] + [snapshot.final_url]
     url_findings = [finding for url in urls for finding in url_checks.check(url)]
+    url_findings += known_bad_findings(urls, known_bad)
     page_findings = [] if snapshot.error else (
-        _form_findings(snapshot) + _brand_title_findings(snapshot) + _link_findings(snapshot))
+        _form_findings(snapshot) + _brand_title_findings(snapshot) + _link_findings(snapshot)
+        + _known_bad_resource_findings(snapshot, known_bad))
     page_findings += _js_form_findings(snapshot, url_findings + page_findings)
     findings = url_checks.numbered(url_findings, "U") + url_checks.numbered(page_findings, "P")
     return replace(snapshot, findings=tuple(findings))
