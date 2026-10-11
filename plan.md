@@ -327,6 +327,11 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
   - elements hidden by CSS skipped, which JavaScript mode marks before capture
 
   The extractor is still used when it finds a real article (500+ characters and at least a quarter of the page's text), with any password forms listed under it.
+- **Cloud review (ultrareview), four findings, all fixed with regression tests:**
+  - password forms inside a hidden pop-up were listed under articles
+  - the "refused automated browser" note measured Markdown including link addresses instead of the page's text
+  - an empty heading or list item passed its marker to the next text, and a list item whose text was in a `<div>` lost its bullet
+  - link and button labels included hidden and script text
 - **EasyList Cookie Notices** comes from uBlock Origin's up-to-date mirror (`ublockorigin.github.io/uAssets/thirdparties/easylist-cookies.txt`); the old fanboy host doesn't resolve and the adblockplus copy dates from March 2024.
 
 ### 6. Extras (in order, only with time left)

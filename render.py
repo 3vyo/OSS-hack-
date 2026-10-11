@@ -241,6 +241,30 @@ def _is_hidden(element) -> bool:
             or (element.tag == "input" and (element.get("type") or "").lower() == "hidden"))
 
 
+def _is_shown(element) -> bool:
+    """Neither the element nor any of its containers is hidden or skipped."""
+    return not any(_is_hidden(e) or (isinstance(e.tag, str) and e.tag in _SKIP_TAGS)
+                   for e in (element, *element.iterancestors()))
+
+
+def _visible_text(element) -> str:
+    """Like text_content(), but leaving out hidden, script and other skipped descendants."""
+    parts = []
+
+    def collect(node) -> None:
+        if not isinstance(node.tag, str) or node.tag in _SKIP_TAGS or _is_hidden(node):
+            return  # comments, scripts, hidden elements; their tail text belongs to the parent
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            collect(child)
+            if child.tail:
+                parts.append(child.tail)
+
+    collect(element)
+    return " ".join(" ".join(parts).split())
+
+
 def _control_label(text: str) -> str:
     return " ".join(safe_text(text).replace("`", "'").split())[:40]
 
@@ -249,7 +273,9 @@ def _control(element) -> str | None:
     """A form control as inline code, e.g. `[ Email: ______ ]` or `[ Continue ]`."""
     tag = element.tag
     if tag == "button":
-        return f"`[ {_control_label(element.text_content() or element.get('aria-label') or 'Button')} ]`"
+        label = (_visible_text(element) or element.get("aria-label") or element.get("title")
+                 or element.get("value") or "Button")  # icon-only buttons often say what they do in a title
+        return f"`[ {_control_label(label)} ]`"
     if tag == "select":
         return f"`[ {_control_label(element.get('aria-label') or element.get('name') or 'choose')} ▾ ]`"
     if tag == "textarea":
@@ -269,7 +295,7 @@ def _control(element) -> str | None:
 def structured_markdown(root, base: str) -> str:
     blocks: list[str] = []
     pieces: list[str] = []
-    pending_prefix = [""]  # the prefix of the block being filled, used once
+    pending_prefix = [""]  # the heading or bullet marker of the block being filled, used once
 
     def flush() -> None:
         line = re.sub(r" ([,.;:!?)])", r"\1", " ".join(" ".join(pieces).split()))  # no space before punctuation
@@ -285,12 +311,13 @@ def structured_markdown(root, base: str) -> str:
         if tag and tag not in _SKIP_TAGS and not _is_hidden(element):
             if tag in _BLOCK_TAGS:
                 flush()
-                pending_prefix[0] = _PREFIXES.get(tag, "")
+                if tag in _PREFIXES:
+                    pending_prefix[0] = _PREFIXES[tag]
             control = _control(element)
             if control is not None:
                 pieces.append(control)
             elif tag == "a" and (href := (element.get("href") or "").strip()):
-                label = _escape(" ".join(element.text_content().split()))
+                label = _escape(_visible_text(element))
                 url = unwrap_redirect(urljoin(base, href))
                 if label and urlsplit(url).scheme in ("http", "https") and not re.search(r"[\s<>]", url):
                     pieces.append(f"[{label}](<{url}>)")
@@ -305,6 +332,8 @@ def structured_markdown(root, base: str) -> str:
                     walk(child)
             if tag in _BLOCK_TAGS:
                 flush()
+                if tag in _PREFIXES:
+                    pending_prefix[0] = ""  # an empty heading or list item: don't pass its marker on
         if element.tail:
             pieces.append(_escape(element.tail))
 
@@ -315,7 +344,7 @@ def structured_markdown(root, base: str) -> str:
 
 def _password_forms(readable, base: str) -> str:
     """Forms that ask for a password, shown under an article, which the text extractor leaves out."""
-    forms = [form for form in readable.iter("form") if not _is_hidden(form) and any(
+    forms = [form for form in readable.iter("form") if _is_shown(form) and any(
         (field.get("type") or "").lower() == "password" for field in form.iter("input"))]
     if not forms:
         return ""

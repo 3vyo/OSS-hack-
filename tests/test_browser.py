@@ -242,3 +242,15 @@ def test_searches_use_static_mode_even_with_javascript_on(monkeypatch):
             assert fetched == ["https://html.duckduckgo.com/html/?q=manchester+trams"]
             assert app.current.mode == "static" and app_module.SEARCH_NOTE in app.current.coverage
     asyncio.run(main())
+
+
+def test_refused_browser_note_counts_text_not_link_addresses(monkeypatch):
+    nav = "".join(f"<a href='https://refuses.test/{'section/' * 6}{name}'>{name}</a> "
+                  for name in ("Home", "News", "Sport", "Help", "Terms", "Privacy"))
+    html = f"<html><body><nav>{nav}</nav><p>Access denied.</p></body></html>".encode()
+    real_fixture_for = policy.fixture_for
+    monkeypatch.setattr(policy, "fixture_for", lambda url: policy.Fixture(403, {"content-type": "text/html"}, html)
+                        if url == "https://refuses.test/" else real_fixture_for(url))
+    snapshot = inspect("https://refuses.test/")
+    assert len(snapshot.markdown) >= 400  # long only because of the link addresses
+    assert any("may refuse automated browsers" in note for note in snapshot.coverage)

@@ -330,7 +330,7 @@ class Browser:
                 coverage.append(f"closed {len(popups)} popup window{'s' * (len(popups) > 1)} the page opened")
             if render.is_robot_check(current.status, page_data.markdown):
                 coverage.append(render.ROBOT_CHECK_NOTE)
-            elif current.status in (401, 403, 429) and len(page_data.markdown) < 400:
+            elif current.status in (401, 403, 429) and len(render.plain_text(page_data.markdown)) < 400:
                 coverage.append(REFUSED_BROWSER_NOTE.format(status=current.status))
             return Snapshot(
                 page_id=page_id, mode="chromium", requested_url=url, final_url=final_url, status=current.status,

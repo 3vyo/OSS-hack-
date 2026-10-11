@@ -82,3 +82,43 @@ def test_javascript_mode_skips_elements_hidden_by_css(monkeypatch):
     snapshot = asyncio.run(main())
     assert "Sign in to Example" in snapshot.markdown and "`[ •••••• ]`" in snapshot.markdown
     assert "another tab or window" not in snapshot.markdown
+
+
+# Regression tests for the cloud review's findings.
+
+ARTICLE = "".join(f"<p>{sentence}</p>" for sentence in (
+    "The council confirmed the new tram timetable for the winter months today, with services running "
+    "every twelve minutes on the main lines and every twenty minutes late in the evening.",
+    "Engineering works at Cornbrook will close two platforms for three weekends in November, and "
+    "replacement buses will run between Cornbrook and Pomona while the track is renewed.",
+    "Passengers are advised to check the journey planner before travelling, because the new timetable "
+    "also changes the first and last trams on the airport line from the start of next month.",
+    "The operator said contactless fares will stay the same, and that the extra trams at weekends "
+    "are expected to ease crowding around the stadium on match days throughout the season."))
+
+
+def test_password_form_inside_a_hidden_popup_is_not_listed():
+    html = (f"<html><body><article><h1>Winter timetable</h1>{ARTICLE}</article>"
+            "<div class='modal' style='display:none'><form action='/login'><input type='password'></form></div>"
+            "</body></html>")
+    page = render.parse(html, "https://news.example/story")
+    assert "new tram timetable" in page.markdown and "Forms on this page" not in page.markdown
+
+
+def test_empty_heading_does_not_turn_the_next_text_into_a_heading():
+    page = render.parse("<html><body><h2></h2>Stray text<p>Paragraph</p></body></html>", "https://a.example/")
+    assert lines(page.markdown) == ["Stray text", "Paragraph"]
+
+
+def test_list_item_keeps_its_bullet_when_its_text_is_in_a_div():
+    page = render.parse("<html><body><ul><li><div>First</div></li><li>Second</li></ul></body></html>",
+                        "https://a.example/")
+    assert lines(page.markdown) == ["- First", "- Second"]
+
+
+def test_hidden_text_inside_links_and_buttons_is_left_out():
+    html = ("<html><body><p><a href='/x'>Visible<span style='display:none'>Hidden</span></a></p>"
+            "<p><button>Go<span aria-hidden='true'>icon-glyph</span><script>var x</script></button></p></body></html>")
+    page = render.parse(html, "https://a.example/")
+    assert "[Visible](<https://a.example/x>)" in page.markdown and "`[ Go ]`" in page.markdown
+    assert "Hidden" not in page.markdown and "icon-glyph" not in page.markdown and "var x" not in page.markdown
