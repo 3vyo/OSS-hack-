@@ -273,7 +273,11 @@ Tick `[x]` only when an item is done **and** verified. If an item is skipped, le
 - **Tests use a fake Ollama client.** Gotcha: `app.workers.wait_for_complete([])` with an empty list waits for *every* worker, including Gemma's endless queue loop.
 
 #### Cookie pop-ups
-- **Reader view:** consent banners are removed before text extraction. An element is removed when its name or role looks like a consent tool (OneTrust, Cookiebot, GOV.UK-style banners, dialogs…) **and** it is small and talks about cookies and choices, so an article about baking cookies stays.
+- **Reader view:** consent banners are removed before text extraction. They are found two ways, and either way the element must be small (≤ 3,000 characters) and mention cookies, so an article about baking cookies stays:
+  - its name or role looks like a consent tool (OneTrust, Cookiebot, GOV.UK-style banners, dialogs…), and it talks about choices
+  - it offers two or more cookie buttons ("Reject all", "Accept all", "Allow", "Decline"…). This catches banners with meaningless class names, like **Google's**. The *smallest* element around the buttons is taken, never a wrapper around a whole small page.
+- **There is no accept/reject step in static mode, by design:** nothing is ever stored, so every visit works like "Reject all". The side panel's **Cookies** line says so, and lists what a hidden notice offered (e.g. "Reject all, Accept all"). Checked live: Google and GOV.UK both show their offered choices.
+- **"Needs JavaScript" note** when a page has scripts but almost no text (YouTube, Google Search's "click here if you are not redirected" page).
 - **Security checks still see the full page:** links and forms come from the original HTML.
 - **Coverage note** when banners were removed, and a **consent-wall note** when the page is mostly a consent notice or the host starts with `consent.`. linkinspector never accepts cookies, so it will always land on these.
 - **Gemma's prompt** says cookie notices and cookie-choice forms aren't a phishing sign. Removing banners also stops them using up Gemma's 800-character page-text budget.
@@ -332,7 +336,9 @@ Tick when the demo page exists **and** the app behaves as expected on it.
 - [ ] A page that navigates itself during capture (comparison marked unavailable, JavaScript redirect recorded)
 - [x] Hidden instructions aimed at the AI: code findings remain and the AI can't act. This doesn't prove the app resists every injection. (`prize.test`)
 - [x] Cookie-consent banners removed from the reader view (`cookies.test`), and a consent wall reported (`video.test/watch` → `consent.test`)
+- [x] A banner with meaningless class names, found by its "Reject all" / "Accept all" buttons (Google; `tests/test_static.py`)
 - [ ] Cookie banners in JavaScript mode: EasyList Cookie List blocks consent scripts; screenshots aren't covered by a banner
+- [ ] Optional, JavaScript mode: a real per-inspection cookie choice. Click the banner's "Reject all" by default, or "Accept all" if the user picks it, before capturing; cookies are thrown away with the session. Only worth it for consent walls that hide content until you choose.
 - [ ] A page that requests a demo tracker, run with blocking on and off
 - [ ] Filter lists missing: "filtering unavailable" shown
 - [x] A redirect chain (`short.test` → `hop.test` → `news.test`)

@@ -33,6 +33,7 @@ class Page:
     forms: tuple[Form, ...]
     markdown: str
     notes: tuple[str, ...]
+    cookie_choices: tuple[str, ...] = ()  # what a hidden cookie notice offered
 
 
 def _document(html: str):
@@ -70,37 +71,68 @@ def _forms(doc, url: str, base: str) -> tuple[Form, ...]:
     return tuple(forms)
 
 
-# Cookie-consent banners, found by the names consent tools give their elements (or a dialog role).
-# An element is only removed when it is small and talks about cookies and choices, so an article
-# about baking cookies stays.
+# Cookie-consent banners are found two ways: by the names consent tools give their elements
+# (or a dialog role), and by their buttons ("Reject all", "Accept all"…) for banners with
+# meaningless class names, like Google's. An element is only removed when it is small and talks
+# about cookies and choices, so an article about baking cookies stays.
 _CONSENT_NAMES = re.compile(
     r"cookie|consent|gdpr|onetrust|ot-sdk|cookiebot|didomi|qc-cmp|quantcast|truste|usercentrics|"
     r"sp_message|fc-consent|cc-window|cc-banner|osano|iubenda|termly|klaro|tarteaucitron", re.IGNORECASE)
 _CONSENT_WORDS = re.compile(r"\b(accept|agree|consent|reject|decline|preferences|manage|settings|partners)\b",
                             re.IGNORECASE)
-_CONSENT_MAX_TEXT = 2000
+_CONSENT_ACTION = re.compile(r"^(accept|reject|allow|deny|decline|refuse|agree|ok)\b", re.IGNORECASE)
+_CONSENT_MAX_TEXT = 3000
 _NEVER_REMOVE = {"html", "body", "main", "article"}
 CONSENT_WALL_NOTE = ("this page seems to be only a cookie-consent notice; linkinspector never accepts cookies, "
                      "so the real content may be missing")
 
 
-def _is_consent_banner(element) -> bool:
-    if not isinstance(element.tag, str) or element.tag in _NEVER_REMOVE:
-        return False
-    text = element.text_content()
-    if len(text) > _CONSENT_MAX_TEXT or "cookie" not in text.lower() or not _CONSENT_WORDS.search(text):
-        return False
+def _label(element) -> str:
+    return " ".join((element.text_content() or element.get("value") or "").split())
+
+
+def _choices(element) -> list[str]:
+    """Labels of the cookie choices a banner offers, e.g. ["Reject all", "Accept all"]."""
+    labels = (_label(b) for b in element.iter("button", "a", "input"))
+    return list(dict.fromkeys(label for label in labels if len(label) <= 40 and _CONSENT_ACTION.match(label)))
+
+
+def _is_named_like_consent(element) -> bool:
     names = " ".join(element.get(attribute) or "" for attribute in ("id", "class", "aria-label"))
     return bool(_CONSENT_NAMES.search(names)) or element.tag == "dialog" or element.get("role") in (
         "dialog", "alertdialog")
 
 
-def _remove_consent_banners(doc) -> int:
-    banners = [element for element in doc.iter() if _is_consent_banner(element)]
-    outermost = [b for b in banners if not any(a in banners for a in b.iterancestors())]
+def _is_consent_banner(element) -> bool:
+    if not isinstance(element.tag, str) or element.tag in _NEVER_REMOVE:
+        return False
+    text = " ".join(element.itertext())  # spaced, so adjacent buttons don't run together
+    if len(text) > _CONSENT_MAX_TEXT or "cookie" not in text.lower():
+        return False
+    if len(_choices(element)) >= 2:
+        return True
+    return bool(_CONSENT_WORDS.search(text)) and _is_named_like_consent(element)
+
+
+def _remove_consent_banners(doc) -> list[str]:
+    """Drop consent banners from the tree. Returns the choices they offered (empty list if none found)."""
+    banners = {e for e in doc.iter() if isinstance(e.tag, str) and _is_named_like_consent(e) and _is_consent_banner(e)}
+    # Unnamed banners: the smallest element around the buttons that qualifies, never a wrapper
+    # around the whole of a small page.
+    for button in doc.iter("button", "a", "input"):
+        if not _CONSENT_ACTION.match(_label(button)):
+            continue
+        for ancestor in button.iterancestors():
+            if ancestor.tag in _NEVER_REMOVE or len(ancestor.text_content()) > _CONSENT_MAX_TEXT:
+                break
+            if _is_consent_banner(ancestor):
+                banners.add(ancestor)
+                break
+    outermost = [e for e in doc.iter() if e in banners and not any(a in banners for a in e.iterancestors())]
+    choices = [choice for banner in outermost for choice in _choices(banner)] or (["(no buttons)"] if outermost else [])
     for banner in outermost:
         banner.drop_tree()
-    return len(outermost)
+    return list(dict.fromkeys(choices))
 
 
 def _fallback_text(doc) -> str:
@@ -124,7 +156,7 @@ def parse(html: str, url: str) -> Page:
     notes = []
     # Links and forms above come from the full page; only the reader text drops consent banners.
     readable = copy.deepcopy(doc)
-    banners = _remove_consent_banners(readable)
+    cookie_choices = _remove_consent_banners(readable)
     markdown = trafilatura.extract(
         lxml.html.tostring(readable, encoding="unicode"), url=url, output_format="markdown",
         include_links=True, include_formatting=True, include_tables=True, include_images=False,
@@ -133,10 +165,10 @@ def parse(html: str, url: str) -> Page:
     if not markdown:
         markdown = _fallback_text(readable)
         notes.append("no main article found; showing all page text")
-    if banners:
-        notes.append(f"removed {banners} cookie-consent notice{'s' * (banners > 1)} from the reader view")
-    if (banners and len(markdown) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
+    if (cookie_choices and len(markdown) < 200) or (urlsplit(url).hostname or "").startswith("consent."):
         notes.append(CONSENT_WALL_NOTE)
+    if len(markdown) < 300 and doc.find(".//script") is not None:
+        notes.append("this page seems to need JavaScript to show its content, which static mode doesn't run")
     return Page(
         title=_squash(doc.findtext(".//title") or ""),
         base_url=base,
@@ -144,4 +176,5 @@ def parse(html: str, url: str) -> Page:
         forms=_forms(doc, url, base),
         markdown=safe_text(markdown),
         notes=tuple(notes),
+        cookie_choices=tuple(safe_text(choice) for choice in cookie_choices),
     )

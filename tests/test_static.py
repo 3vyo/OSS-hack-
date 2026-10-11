@@ -47,7 +47,7 @@ def test_cookie_banners_are_removed_from_reader_text_only():
     snapshot = fetch("https://cookies.test/")
     assert "tram line to the airport" in snapshot.markdown
     assert "analytics cookies" not in snapshot.markdown and "Accept All Cookies" not in snapshot.markdown
-    assert "removed 2 cookie-consent notices from the reader view" in snapshot.coverage
+    assert snapshot.cookie_choices == ("Accept analytics cookies", "Reject analytics cookies", "Accept All Cookies")
     assert [form.action for form in snapshot.forms] == ["https://cookies.test/cookies"]  # checks still see it
 
 
@@ -64,3 +64,25 @@ def test_consent_wall_is_reported():
     snapshot = fetch("https://video.test/watch")
     assert snapshot.final_url.startswith("https://consent.test/")
     assert render.CONSENT_WALL_NOTE in snapshot.coverage
+
+
+def test_unnamed_banner_is_found_by_its_buttons():
+    # Like Google's: meaningless class names, no dialog role, buttons that only work with JavaScript.
+    html = ('<html><head><title>Search</title></head><body><div class="xY1z"><div class="Kq9">'
+            '<h1>Before you continue</h1><p>We use cookies and data to deliver and maintain our services '
+            'and measure audience engagement.</p></div><div class="bb2"><button>Reject all</button>'
+            '<button>Accept all</button><a href="/more">More options</a></div></div>'
+            '<div class="page"><p>Search the web, find images, and read the news from around the world '
+            'every single day with one simple box at the top of the page.</p></div></body></html>')
+    page = render.parse(html, "https://search.example/")
+    assert page.cookie_choices == ("Reject all", "Accept all")
+    assert "We use cookies" not in page.markdown and "Search the web" in page.markdown
+
+
+def test_small_page_wrapper_is_not_removed_with_its_banner():
+    html = ('<html><body><div id="page"><p>Opening times for the library are nine until five on '
+            'weekdays, and ten until four on Saturdays.</p><div class="x1"><p>This site uses cookies.</p>'
+            '<button>Accept</button><button>Reject</button></div></div></body></html>')
+    page = render.parse(html, "https://library.example/")
+    assert "Opening times for the library" in page.markdown
+    assert "uses cookies" not in page.markdown

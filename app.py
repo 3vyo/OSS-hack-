@@ -69,6 +69,15 @@ RISK = {2: ("Risk: HIGH", "bold white on red"), 1: ("Risk: MEDIUM", "bold black 
         0: ("No warning signs found", "bold")}
 
 
+def cookie_summary(choices: tuple[str, ...]) -> str:
+    always = "None stored, so every visit works like ‘Reject all’."
+    if not choices:
+        return always
+    offered = [choice for choice in choices if choice != "(no buttons)"]
+    hidden = f"Cookie notice hidden (it offered: {', '.join(offered)})." if offered else "Cookie notice hidden."
+    return f"{hidden} Nothing was accepted. {always}"
+
+
 def is_risky(snapshot: Snapshot) -> bool:
     return not snapshot.error and any(f.severity in ("warning", "danger") for f in snapshot.findings)
 
@@ -137,6 +146,7 @@ def page_info(snapshot: Snapshot, analysis: Analysis | None = None, available: b
         row(f"Redirects ({len(snapshot.redirects)})", "\n".join(hops + [f"→ {snapshot.final_url}"]), "yellow")
     if not snapshot.error:
         with_password = sum(form.has_password for form in snapshot.forms)
+        row("Cookies", cookie_summary(snapshot.cookie_choices))
         row("Links", str(len(snapshot.links)))
         row("Forms", f"{len(snapshot.forms)}" + (f" ({with_password} with a password field)" if with_password else ""),
             "red" if with_password else "")

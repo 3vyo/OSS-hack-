@@ -73,6 +73,7 @@ class Snapshot:
     requests: tuple[RequestRecord, ...] = ()
     findings: tuple[Finding, ...] = ()
     coverage: tuple[str, ...] = ()
+    cookie_choices: tuple[str, ...] = ()  # what a hidden cookie notice offered, e.g. ("Reject all", "Accept all")
     error: str = ""
 
     @classmethod
